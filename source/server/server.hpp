@@ -3,13 +3,38 @@
 #define SERVER_HPP
 
 #include <aliases.hpp>
+#include <pool/pool.hpp>
 
 class Server {
  public:
-  Server() = default;
-  ~Server() = default;
+  Server(IOContext& context);
 
-  void start();
+  ~Server();
+
+  auto start(u16 port) -> void;
+
+  template <typename F, typename... Args>
+    requires TaskType<F, String, Args...>
+  auto set_task(F&& task, Args&&... args) -> void {
+    _process_connection_task = std::make_shared<std::function<String(String)>>(
+        [task = std::forward<F>(task), ... cap_args = std::forward<Args>(args)](
+            const String& input) -> String {
+          return task(input, cap_args...);
+        });
+  }
+
+  auto stop() -> void;
+
+ private:
+  IOContext& _context;
+  UniquePtr<Acceptor> _acceptor;
+  Atomic<bool> _running;
+  ThreadPool _thread_pool;
+  SharedPtr<std::function<String(String)>> _process_connection_task;
+  JThread _server_thread;
+  auto _start_accept() -> void;
+  auto _process_connection(SharedPtr<Socket> socket) -> void;
+  auto _start(u16 port) -> void;
 };
 
 #endif  // SERVER_HPP

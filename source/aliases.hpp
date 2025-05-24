@@ -2,13 +2,16 @@
 #ifndef ALIASES_HPP
 #define ALIASES_HPP
 
+#include <boost/asio.hpp>
 #include <condition_variable>
 #include <cstdint>
 #include <future>
 #include <mutex>
 #include <queue>
+#include <sstream>
 #include <string>
 #include <thread>
+#include <tuple>
 #include <vector>
 
 // For unused parameters or variables.
@@ -16,20 +19,29 @@
 #define unused [[maybe_unused]]
 
 using String = std::string;
+using StringStream = std::stringstream;
 
 template <typename T>
 using Vector = std::vector<T>;
+template <typename... T>
+using Tuple = std::tuple<T...>;
 using JThread = std::jthread;
 template <typename T>
 using Queue = std::queue<T>;
 using Mutex = std::mutex;
 using ConVar = std::condition_variable;
 template <typename T>
+using Atomic = std::atomic<T>;
+template <typename T>
 using LockGuard = std::lock_guard<T>;
 template <typename T>
 using UniqueLock = std::unique_lock<T>;
 template <typename T>
 using Future = std::future<T>;
+template <typename T>
+using SharedPtr = std::shared_ptr<T>;
+template <typename T>
+using UniquePtr = std::unique_ptr<T>;
 
 using i8 = int8_t;
 using i16 = int16_t;
@@ -44,4 +56,13 @@ using u64 = uint64_t;
 using f32 = float;
 using f64 = double;
 
+// Boost.Asio
+using IOContext = boost::asio::io_context;
+using TCP = boost::asio::ip::tcp;
+using Socket = boost::asio::ip::tcp::socket;
+using Acceptor = boost::asio::ip::tcp::acceptor;
+using Endpoint = boost::asio::ip::tcp::endpoint;
+using ErrorCode = boost::system::error_code;
+using SignalSet = boost::asio::signal_set;
+namespace asio = boost::asio;
 #endif  // ALIASES_HPP
