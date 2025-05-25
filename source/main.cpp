@@ -7,30 +7,35 @@
 #include <thread>
 
 void setup_logging();
-
-void server_main(Server& server);
+i32 server_main();
+String get_role(int argc, char** argv);
 
 i32 main(UNUSED i32 argc, UNUSED char** argv) {
   try {
     setup_logging();
-    IOContext context;
-    Server server(context);
-    GracefulShutdown<Server> shutdown(context, server);
-    server_main(server);
-    context.run();
-    return 0;
+    String role = get_role(argc, argv);
+    if (role == "server") {
+      return server_main();
+    } else if (role == "client") {
+      return 0;
+    }
   } catch (const Exception& e) {
     spdlog::error("Error: {}", e.what());
     return 1;
   }
 }
 
-void server_main(Server& server) {
+i32 server_main() {
+  IOContext context;
+  Server server(context);
+  GracefulShutdown<Server> shutdown(context, server);
   server.set_task([](String request) {
     String response = "Hello, " + request;
     return response;
   });
   server.start(8080);
+  context.run();
+  return 0;
 }
 
 void setup_logging() {
@@ -43,4 +48,15 @@ void setup_logging() {
     std::cerr << "Failed to initialize logging: " << e.what() << std::endl;
     throw;
   }
+}
+
+String get_role(int argc, char** argv) {
+  if (argc < 2) {
+    throw std::runtime_error("Role not specified");
+  }
+  String role = argv[1];
+  if (role != "server" && role != "client") {
+    throw std::runtime_error("Invalid role: " + role);
+  }
+  return role;
 }

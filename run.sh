@@ -19,7 +19,8 @@ elif [ "$arg1" == "build" ]; then
     cmake --build build/debug -j 10
 elif [ "$arg1" == "bin" ]; then
     echo "Running binary"
-    cmake --build build/debug -j 10 && ./build/debug/ScoreHive
+    role=$2
+    cmake --build build/debug -j 10 && ./build/debug/ScoreHive "$role"
 else
     echo "Invalid argument"
     exit 1
