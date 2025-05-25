@@ -2,14 +2,11 @@
 #include <iostream>
 
 Server::Server(IOContext& context)
-    : _context(context), _thread_pool(std::thread::hardware_concurrency()) {}
+    : _context(context),
+      _thread_pool(std::thread::hardware_concurrency()),
+      _work_guard(asio::make_work_guard(context)) {}
 
-void Server::start(u16 port) {
-  _server_thread = JThread([this, port]() { _start(port); });
-}
-
-auto Server::_start(u16 port) -> void {
-  std::cout << "Server started" << std::endl;
+auto Server::start(u16 port) -> void {
   if (!_process_connection_task) {
     throw std::runtime_error("Process connection task is not set");
   }
@@ -20,76 +17,90 @@ auto Server::_start(u16 port) -> void {
 
 auto Server::_start_accept() -> void {
   if (!_running) {
-    std::cout << "Not accepting connection" << std::endl;
     return;
   }
   SharedPtr<Socket> socket = std::make_shared<Socket>(_context);
-  _acceptor->async_accept(
-      *socket, [this, socket](const boost::system::error_code& error) {
-        if (!_running) {
-          return;
-        }
-        if (!error) {
-          std::cout << "New connection accepted" << std::endl;
-          _process_connection(socket);
-          _start_accept();
-        } else if (error) {
-          std::cout << "Error accepting connection: " << error.message()
-                    << std::endl;
-          if (socket->is_open()) {
-            socket->shutdown(Socket::shutdown_both);
-            socket->close();
-          }
-        }
-      });
-}
-
-auto Server::_process_connection(unused SharedPtr<Socket> socket) -> void {
-  _thread_pool.add_task([this, socket]() -> void {
-    try {
-      // 1. Recibir la información
-      boost::asio::streambuf stream_buffer;
-      ErrorCode error;
-      asio::read_until(*socket, stream_buffer, '$', error);
-      String request(
-          asio::buffers_begin(stream_buffer.data()),
-          asio::buffers_begin(stream_buffer.data()) + stream_buffer.size() - 1);
-      request.pop_back();
-      if (error) {
-        std::cout << "Error reading from socket: " << error.message()
-                  << std::endl;
+  _acceptor->async_accept(*socket, [this, socket](const ErrorCode& acc_err) {
+    if (!_running) {
+      return;
+    }
+    if (!acc_err) {
+      _process_connection(socket);
+      _start_accept();
+    } else {
+      if (acc_err == error::bad_descriptor) {
         return;
       }
-
-      // 2. Procesar la información (en el mismo hilo del pool)
-      if (_process_connection_task) {
-        String response = (*_process_connection_task)(request);
-
-        // 3. Enviar respuesta
-        ErrorCode send_error;
-        socket->send(asio::buffer(response), 0, send_error);
-
-        if (send_error) {
-          std::cout << "Error sending response: " << send_error.message()
-                    << std::endl;
-        }
+      try {
+        auto timer = std::make_shared<SteadyTimer>(_context);
+        timer->expires_after(std::chrono::milliseconds(100));
+        timer->async_wait([this, timer](unused const ErrorCode& tim_err) {
+          _start_accept();
+        });
+      } catch (const Exception& e) {
+        // Critical error setting up retry timer
       }
-
-    } catch (const std::exception& e) {
-      std::cout << "Error processing connection: " << e.what() << std::endl;
+      return;
     }
   });
 }
 
+auto Server::_process_connection(unused SharedPtr<Socket> socket) -> void {
+  _connections++;
+  auto read_buffer = std::make_shared<Streambuf>();
+  auto read_callback = [this, socket, read_buffer](const ErrorCode& r_err,
+                                                   u64 r_bytes) -> void {
+    if (!r_err) {
+      auto task_callback = [this, socket, read_buffer, r_bytes]() -> void {
+        try {
+          String request(
+              asio::buffers_begin(read_buffer->data()),
+              asio::buffers_begin(read_buffer->data()) + r_bytes - 1);
+          if (!_process_connection_task) {
+            throw std::runtime_error("Process connection task is not set");
+          }
+          String response = (*_process_connection_task)(request);
+          auto write_buffer = std::make_shared<String>(std::move(response));
+          auto write_callback = [this, socket, write_buffer](
+                                    unused const ErrorCode& w_err,
+                                    unused u64 w_bytes) -> void {
+            _connections--;
+          };
+          asio::async_write(*socket, asio::buffer(*write_buffer),
+                            write_callback);
+        } catch (const Exception& e) {
+          _connections--;
+        }
+      };
+      _thread_pool.add_task(task_callback);
+    } else {
+      _connections--;
+    }
+  };
+  asio::async_read_until(*socket, *read_buffer, '$', read_callback);
+}
+
 auto Server::stop() -> void {
-  std::cout << "Stopping server" << std::endl;
   _running = false;
   if (_acceptor) {
     _acceptor->close();
   }
-  if (_server_thread.joinable()) {
-    _server_thread.join();
-  }
+  _start_shutdown_monitor();
+}
+
+auto Server::_start_shutdown_monitor() -> void {
+  auto monitor_timer = std::make_shared<SteadyTimer>(_context);
+  monitor_timer->expires_after(std::chrono::milliseconds(500));
+
+  monitor_timer->async_wait([this, monitor_timer](const ErrorCode& error) {
+    if (!error) {
+      if (_connections > 0) {
+        _start_shutdown_monitor();
+      } else {
+        _work_guard.reset();
+      }
+    }
+  });
 }
 
 Server::~Server() {

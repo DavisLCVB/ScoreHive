@@ -29,12 +29,15 @@ class Server {
   IOContext& _context;
   UniquePtr<Acceptor> _acceptor;
   Atomic<bool> _running;
+  Atomic<u64> _connections;
   ThreadPool _thread_pool;
   SharedPtr<std::function<String(String)>> _process_connection_task;
-  JThread _server_thread;
+  IOContextWorkGuard _work_guard;
+
   auto _start_accept() -> void;
   auto _process_connection(SharedPtr<Socket> socket) -> void;
   auto _start(u16 port) -> void;
+  auto _start_shutdown_monitor() -> void;
 };
 
 #endif  // SERVER_HPP

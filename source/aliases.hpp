@@ -5,6 +5,7 @@
 #include <boost/asio.hpp>
 #include <condition_variable>
 #include <cstdint>
+#include <exception>
 #include <future>
 #include <mutex>
 #include <queue>
@@ -43,6 +44,8 @@ using SharedPtr = std::shared_ptr<T>;
 template <typename T>
 using UniquePtr = std::unique_ptr<T>;
 
+using Exception = std::exception;
+
 using i8 = int8_t;
 using i16 = int16_t;
 using i32 = int32_t;
@@ -64,5 +67,10 @@ using Acceptor = boost::asio::ip::tcp::acceptor;
 using Endpoint = boost::asio::ip::tcp::endpoint;
 using ErrorCode = boost::system::error_code;
 using SignalSet = boost::asio::signal_set;
+using Streambuf = boost::asio::streambuf;
+using SteadyTimer = boost::asio::steady_timer;
+using IOContextWorkGuard =
+    boost::asio::executor_work_guard<IOContext::executor_type>;
+namespace error = boost::asio::error;
 namespace asio = boost::asio;
 #endif  // ALIASES_HPP
