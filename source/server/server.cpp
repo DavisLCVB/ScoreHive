@@ -49,6 +49,8 @@ auto Server::_start_accept() -> void {
 }
 
 auto Server::_process_connection(UNUSED SharedPtr<Socket> socket) -> void {
+  spdlog::info("New connection from {}",
+               socket->remote_endpoint().address().to_string());
   _connections++;
   auto read_buffer = std::make_shared<Streambuf>();
   auto read_callback = [this, socket, read_buffer](const ErrorCode& r_err,
@@ -69,6 +71,9 @@ auto Server::_process_connection(UNUSED SharedPtr<Socket> socket) -> void {
                                     UNUSED u64 w_bytes) -> void {
             if (w_err) {
               spdlog::error("Error sending response: {}", w_err.message());
+            } else {
+              spdlog::info("Response sent to {}",
+                           socket->remote_endpoint().address().to_string());
             }
             _connections--;
           };
@@ -92,6 +97,9 @@ auto Server::stop() -> void {
   _running = false;
   if (_acceptor) {
     _acceptor->close();
+  }
+  if (_connections > 0) {
+    spdlog::info("Waiting for {} connections to finish", _connections.load());
   }
   _start_shutdown_monitor();
 }

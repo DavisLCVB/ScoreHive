@@ -42,7 +42,7 @@ class GracefulShutdown {
             break;
         }
         spdlog::info(
-            "Received signal {} ({}). Initializing graceful shutdown...",
+            "Received signal {} ({}).\nInitializing graceful shutdown...",
             signal_number, signal_name);
         _t.stop();
       }
