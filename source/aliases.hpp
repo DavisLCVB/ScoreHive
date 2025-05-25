@@ -17,7 +17,7 @@
 
 // For unused parameters or variables.
 // Avoids compiler warnings-errors (-Wunused-parameter -Werror).
-#define unused [[maybe_unused]]
+#define UNUSED [[maybe_unused]]
 
 using String = std::string;
 using StringStream = std::stringstream;

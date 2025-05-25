@@ -4,6 +4,7 @@
 
 #include <aliases.hpp>
 #include <concepts>
+#include <system/spdlog_wrapper.hpp>
 
 template <typename T>
 concept Stoppable = requires(T t) { t.stop(); };
@@ -25,22 +26,24 @@ class GracefulShutdown {
     _signals.async_wait([this](const ErrorCode& error, int signal_number) {
       if (!error && !_stop) {
         _stop = true;
-        std::cout << "Received signal " << signal_number;
+        String signal_name;
         switch (signal_number) {
           case SIGINT:
-            std::cout << " (SIGINT)";
+            signal_name = "SIGINT";
             break;
           case SIGTERM:
-            std::cout << " (SIGTERM)";
+            signal_name = "SIGTERM";
             break;
           case SIGQUIT:
-            std::cout << " (SIGQUIT)";
+            signal_name = "SIGQUIT";
             break;
           default:
-            std::cout << " (unknown)";
+            signal_name = "unknown";
             break;
         }
-        std::cout << ". Initializing graceful shutdown..." << std::endl;
+        spdlog::info(
+            "Received signal {} ({}). Initializing graceful shutdown...",
+            signal_number, signal_name);
         _t.stop();
       }
     });

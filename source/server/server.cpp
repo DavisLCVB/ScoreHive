@@ -1,5 +1,6 @@
 #include "server.hpp"
 #include <iostream>
+#include <system/spdlog_wrapper.hpp>
 
 Server::Server(IOContext& context)
     : _context(context),
@@ -12,6 +13,7 @@ auto Server::start(u16 port) -> void {
   }
   _acceptor = std::make_unique<Acceptor>(_context, Endpoint(TCP::v4(), port));
   _running = true;
+  spdlog::info("Server started on port {}", port);
   _start_accept();
 }
 
@@ -29,23 +31,24 @@ auto Server::_start_accept() -> void {
       _start_accept();
     } else {
       if (acc_err == error::bad_descriptor) {
+        spdlog::error("Critical error: {}", acc_err.message());
         return;
       }
       try {
         auto timer = std::make_shared<SteadyTimer>(_context);
         timer->expires_after(std::chrono::milliseconds(100));
-        timer->async_wait([this, timer](unused const ErrorCode& tim_err) {
+        timer->async_wait([this, timer](UNUSED const ErrorCode& tim_err) {
           _start_accept();
         });
       } catch (const Exception& e) {
-        // Critical error setting up retry timer
+        spdlog::error("Critical error setting up retry timer: {}", e.what());
       }
       return;
     }
   });
 }
 
-auto Server::_process_connection(unused SharedPtr<Socket> socket) -> void {
+auto Server::_process_connection(UNUSED SharedPtr<Socket> socket) -> void {
   _connections++;
   auto read_buffer = std::make_shared<Streambuf>();
   auto read_callback = [this, socket, read_buffer](const ErrorCode& r_err,
@@ -62,18 +65,23 @@ auto Server::_process_connection(unused SharedPtr<Socket> socket) -> void {
           String response = (*_process_connection_task)(request);
           auto write_buffer = std::make_shared<String>(std::move(response));
           auto write_callback = [this, socket, write_buffer](
-                                    unused const ErrorCode& w_err,
-                                    unused u64 w_bytes) -> void {
+                                    const ErrorCode& w_err,
+                                    UNUSED u64 w_bytes) -> void {
+            if (w_err) {
+              spdlog::error("Error sending response: {}", w_err.message());
+            }
             _connections--;
           };
           asio::async_write(*socket, asio::buffer(*write_buffer),
                             write_callback);
         } catch (const Exception& e) {
+          spdlog::error("Error processing connection: {}", e.what());
           _connections--;
         }
       };
       _thread_pool.add_task(task_callback);
     } else {
+      spdlog::error("Error reading request: {}", r_err.message());
       _connections--;
     }
   };
@@ -99,6 +107,8 @@ auto Server::_start_shutdown_monitor() -> void {
       } else {
         _work_guard.reset();
       }
+    } else {
+      spdlog::error("Error starting shutdown monitor: {}", error.message());
     }
   });
 }

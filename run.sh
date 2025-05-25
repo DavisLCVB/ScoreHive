@@ -19,8 +19,7 @@ elif [ "$arg1" == "build" ]; then
     cmake --build build/debug -j 10
 elif [ "$arg1" == "bin" ]; then
     echo "Running binary"
-    cmake --build build/debug -j 10
-    ./build/debug/ScoreHive
+    cmake --build build/debug -j 10 && ./build/debug/ScoreHive
 else
     echo "Invalid argument"
     exit 1
