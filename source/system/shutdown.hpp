@@ -4,7 +4,7 @@
 
 #include <aliases.hpp>
 #include <concepts>
-#include <system/spdlog_wrapper.hpp>
+#include <system/logger.hpp>
 
 template <typename T>
 concept Stoppable = requires(T t) { t.stop(); };

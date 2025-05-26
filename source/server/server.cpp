@@ -1,6 +1,6 @@
 #include "server.hpp"
 #include <iostream>
-#include <system/spdlog_wrapper.hpp>
+#include <system/logger.hpp>
 
 Server::Server(IOContext& context)
     : _context(context),
@@ -90,7 +90,7 @@ auto Server::_process_connection(UNUSED SharedPtr<Socket> socket) -> void {
       _connections--;
     }
   };
-  asio::async_read_until(*socket, *read_buffer, '$', read_callback);
+  asio::async_read_until(*socket, *read_buffer, "\r\n\r\n", read_callback);
 }
 
 auto Server::stop() -> void {
