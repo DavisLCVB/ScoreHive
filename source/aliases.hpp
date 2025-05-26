@@ -52,6 +52,9 @@ using OnceFlag = std::once_flag;
 
 using Exception = std::exception;
 
+template <typename T>
+using Function = std::function<T>;
+
 using i8 = int8_t;
 using i16 = int16_t;
 using i32 = int32_t;
@@ -70,11 +73,12 @@ using IOContext = boost::asio::io_context;
 using TCP = boost::asio::ip::tcp;
 using Socket = boost::asio::ip::tcp::socket;
 using Acceptor = boost::asio::ip::tcp::acceptor;
-using Endpoint = boost::asio::ip::tcp::endpoint;
+using TCPEndpoint = boost::asio::ip::tcp::endpoint;
 using ErrorCode = boost::system::error_code;
 using SignalSet = boost::asio::signal_set;
 using Streambuf = boost::asio::streambuf;
 using SteadyTimer = boost::asio::steady_timer;
+using Resolver = boost::asio::ip::tcp::resolver;
 using IOContextWorkGuard =
     boost::asio::executor_work_guard<IOContext::executor_type>;
 namespace error = boost::asio::error;

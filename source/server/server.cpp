@@ -11,7 +11,8 @@ auto Server::start(u16 port) -> void {
   if (!_process_connection_task) {
     throw std::runtime_error("Process connection task is not set");
   }
-  _acceptor = std::make_unique<Acceptor>(_context, Endpoint(TCP::v4(), port));
+  _acceptor =
+      std::make_unique<Acceptor>(_context, TCPEndpoint(TCP::v4(), port));
   _running = true;
   spdlog::info("Server started on port {}", port);
   _start_accept();
