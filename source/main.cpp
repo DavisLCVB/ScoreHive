@@ -6,9 +6,9 @@ String get_role(int argc, char** argv);
 i32 main(i32 argc, char** argv) {
   try {
     String role = get_role(argc, argv);
-    if (role == "server") {
+    if (role == "worker") {
       return Worker::main(argc, argv);
-    } else if (role == "client") {
+    } else if (role == "orch") {
       return 0;
     }
   } catch (const Exception& e) {
@@ -22,7 +22,7 @@ String get_role(int argc, char** argv) {
     throw std::runtime_error("Role not specified");
   }
   String role = argv[1];
-  if (role != "server" && role != "client") {
+  if (role != "worker" && role != "orch") {
     throw std::runtime_error("Invalid role: " + role);
   }
   return role;

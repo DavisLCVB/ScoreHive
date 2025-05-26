@@ -9,7 +9,7 @@ class Logger {
  public:
   static auto config() -> void {
     try {
-      spdlog::set_pattern("[%Y-%m-%d %H:%M:%S.%e] [%^%l%$] [thread %t] %v");
+      spdlog::set_pattern("[%Y-%m-%d %H:%M:%S.%e] [%^%l%$] %v");
       spdlog::set_level(spdlog::level::debug);
       spdlog::flush_every(std::chrono::seconds(3));
       spdlog::info("Logging system initialized");

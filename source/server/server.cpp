@@ -60,7 +60,7 @@ auto Server::_process_connection(UNUSED SharedPtr<Socket> socket) -> void {
         try {
           String request(
               asio::buffers_begin(read_buffer->data()),
-              asio::buffers_begin(read_buffer->data()) + r_bytes - 1);
+              asio::buffers_begin(read_buffer->data()) + r_bytes - 4);
           if (!_process_connection_task) {
             throw std::runtime_error("Process connection task is not set");
           }

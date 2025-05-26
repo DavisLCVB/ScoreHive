@@ -54,6 +54,21 @@ else()
     message("Found system spdlog")
 endif()
 
+find_package(nlohmann_json QUIET)
+
+if(NOT nlohmann_json_FOUND)
+    message("nlohmann_json not found, downloading...")
+    FetchContent_Declare(
+        nlohmann_json
+        GIT_REPOSITORY https://github.com/nlohmann/json.git
+        GIT_TAG v3.11.3
+    )
+    FetchContent_MakeAvailable(nlohmann_json)
+    message("Downloaded and configured nlohmann_json")
+else()
+    message("Found system nlohmann_json")
+endif()
+
 set(SCORE_HIVE_SOURCES
     source/main.cpp
     source/pool/pool.cpp
@@ -63,9 +78,11 @@ set(SCORE_HIVE_SOURCES
 
 add_executable(ScoreHive ${SCORE_HIVE_SOURCES})
 target_include_directories(ScoreHive PRIVATE "${CMAKE_SOURCE_DIR}/source")
+target_include_directories(ScoreHive PRIVATE ${nlohmann_json_INCLUDE_DIRS})
 
 target_link_libraries(ScoreHive PRIVATE ${Boost_LIBRARIES})
 target_link_libraries(ScoreHive PRIVATE spdlog::spdlog)
+target_link_libraries(ScoreHive PRIVATE nlohmann_json::nlohmann_json)
 
 get_target_property(SPDLOG_INCLUDE_DIRS spdlog::spdlog INTERFACE_INCLUDE_DIRECTORIES)
 

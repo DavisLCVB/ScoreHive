@@ -26,6 +26,10 @@ template <typename T>
 using Vector = std::vector<T>;
 template <typename... T>
 using Tuple = std::tuple<T...>;
+
+template <typename K, typename V>
+using Map = std::unordered_map<K, V>;
+
 using JThread = std::jthread;
 template <typename T>
 using Queue = std::queue<T>;
@@ -43,6 +47,8 @@ template <typename T>
 using SharedPtr = std::shared_ptr<T>;
 template <typename T>
 using UniquePtr = std::unique_ptr<T>;
+
+using OnceFlag = std::once_flag;
 
 using Exception = std::exception;
 
@@ -73,4 +79,5 @@ using IOContextWorkGuard =
     boost::asio::executor_work_guard<IOContext::executor_type>;
 namespace error = boost::asio::error;
 namespace asio = boost::asio;
+
 #endif  // ALIASES_HPP
