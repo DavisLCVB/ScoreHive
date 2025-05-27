@@ -126,7 +126,7 @@ auto Worker::_handle_check_answers(const Vector<String>& parts) -> String {
 }
 
 auto Worker::_format_response(const String& content) -> String {
-  return "[response]\r\n" + content + "\r\n\r\n";
+  return "[response] " + content;
 }
 
 auto Worker::_format_error(const String& error) -> String {

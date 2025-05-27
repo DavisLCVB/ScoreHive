@@ -1,5 +1,6 @@
 #include "server.hpp"
 #include <iostream>
+#include <regex>
 #include <system/logger.hpp>
 
 Server::Server(IOContext& context)
@@ -65,10 +66,12 @@ auto Server::_process_connection(UNUSED SharedPtr<Socket> socket) -> void {
           if (!_process_connection_task) {
             throw std::runtime_error("Process connection task is not set");
           }
-          spdlog::debug("Request: {}", request);
+
+          spdlog::debug("Request: {}", Server::_scape_text(request));
           String response = (*_process_connection_task)(request);
-          spdlog::debug("Response: {}", response);
-          auto write_buffer = std::make_shared<String>(std::move(response));
+          spdlog::debug("Response: {}", Server::_scape_text(response));
+          auto write_buffer =
+              std::make_shared<String>(std::move(response) + "\r\n\r\n");
           auto write_callback = [this, socket, write_buffer](
                                     const ErrorCode& w_err,
                                     UNUSED u64 w_bytes) -> void {
@@ -122,6 +125,14 @@ auto Server::_start_shutdown_monitor() -> void {
       spdlog::error("Error starting shutdown monitor: {}", error.message());
     }
   });
+}
+
+auto Server::_scape_text(const String& request) -> String {
+  String result = request;
+  result = std::regex_replace(result, std::regex("\r\n"), "\\r\\n");
+  result = std::regex_replace(result, std::regex("\r"), "\\r");
+  result = std::regex_replace(result, std::regex("\n"), "\\n");
+  return result;
 }
 
 Server::~Server() {

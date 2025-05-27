@@ -38,6 +38,7 @@ class Server {
   auto _process_connection(SharedPtr<Socket> socket) -> void;
   auto _start(u16 port) -> void;
   auto _start_shutdown_monitor() -> void;
+  static auto _scape_text(const String& request) -> String;
 };
 
 #endif  // SERVER_HPP

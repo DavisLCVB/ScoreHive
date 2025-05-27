@@ -2,10 +2,16 @@
 
 # Script to run the server
 
-debug_mode=false
+debug_mode=true
 mode=$1
-if [ "$mode" = "debug" ]; then
-    debug_mode=true
+if [ "$mode" = "release" ]; then
+    debug_mode=false
+fi
+
+if [ "$debug_mode" = true ]; then
+    echo "Running in debug mode"
+else
+    echo "Running in release mode"
 fi
 
 if [ "$debug_mode" = true ]; then
