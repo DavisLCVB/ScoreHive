@@ -1,14 +1,16 @@
 #include <actors/worker.hpp>
 #include <client/client.hpp>
 #include <iostream>
+#include <system/environment.hpp>
 #include <system/logger.hpp>
 
-String get_role(int argc, char** argv);
 i32 orch_main();
 
 i32 main(i32 argc, char** argv) {
   try {
-    String role = get_role(argc, argv);
+    Environment::load();
+    Logger::config();
+    const auto& role = Environment::get("ROLE");
     if (role == "worker") {
       return Worker::main(argc, argv);
     } else if (role == "orch") {
@@ -72,15 +74,4 @@ i32 orch_main() {
   periodic_requester.start();
   io_context.run();
   return 0;
-}
-
-String get_role(int argc, char** argv) {
-  if (argc < 2) {
-    throw std::runtime_error("Role not specified");
-  }
-  String role = argv[1];
-  if (role != "worker" && role != "orch") {
-    throw std::runtime_error("Invalid role: " + role);
-  }
-  return role;
 }

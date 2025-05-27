@@ -50,8 +50,8 @@ auto Server::_start_accept() -> void {
 }
 
 auto Server::_process_connection(UNUSED SharedPtr<Socket> socket) -> void {
-  spdlog::info("New connection from {}",
-               socket->remote_endpoint().address().to_string());
+  spdlog::debug("New connection from {}",
+                socket->remote_endpoint().address().to_string());
   _connections++;
   auto read_buffer = std::make_shared<Streambuf>();
   auto read_callback = [this, socket, read_buffer](const ErrorCode& r_err,
@@ -65,7 +65,9 @@ auto Server::_process_connection(UNUSED SharedPtr<Socket> socket) -> void {
           if (!_process_connection_task) {
             throw std::runtime_error("Process connection task is not set");
           }
+          spdlog::debug("Request: {}", request);
           String response = (*_process_connection_task)(request);
+          spdlog::debug("Response: {}", response);
           auto write_buffer = std::make_shared<String>(std::move(response));
           auto write_callback = [this, socket, write_buffer](
                                     const ErrorCode& w_err,
@@ -73,8 +75,8 @@ auto Server::_process_connection(UNUSED SharedPtr<Socket> socket) -> void {
             if (w_err) {
               spdlog::error("Error sending response: {}", w_err.message());
             } else {
-              spdlog::info("Response sent to {}",
-                           socket->remote_endpoint().address().to_string());
+              spdlog::debug("Response sent to {}",
+                            socket->remote_endpoint().address().to_string());
             }
             _connections--;
           };

@@ -1,4 +1,5 @@
 #include "worker.hpp"
+#include <system/environment.hpp>
 #include <system/logger.hpp>
 #include <system/shutdown.hpp>
 
@@ -11,12 +12,11 @@ auto Worker::_get_instance() -> Worker& {
 }
 
 auto Worker::main(UNUSED i32 argc, UNUSED char** argv) -> i32 {
-  Logger::config();
   IOContext context;
   Server server(context);
   GracefulShutdown<Server> shutdown(context, server);
   server.set_task(&Worker::_process_request);
-  server.start(8080);
+  server.start(std::stoi(Environment::get("PORT")));
   context.run();
   return 0;
 }

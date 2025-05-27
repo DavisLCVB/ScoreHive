@@ -75,6 +75,7 @@ set(SCORE_HIVE_SOURCES
     source/server/server.cpp
     source/actors/worker.cpp
     source/client/client.cpp
+    source/system/environment.cpp
 )
 
 add_executable(ScoreHive ${SCORE_HIVE_SOURCES})
