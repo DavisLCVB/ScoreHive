@@ -193,3 +193,16 @@ auto Worker::_check_answers_from_json(const nlohmann::json& user_answers) const
                         {"total_questions", result_answers.size()},
                         {"answers", result_answers}};
 }
+
+i32 main(i32 argc, char** argv) {
+  try {
+    Environment::load();
+    Logger::config();
+    const auto& role = Environment::get("ROLE");
+    if (role == "worker") {
+      return Worker::main(argc, argv);
+    }
+  } catch (const Exception& e) {
+    std::cerr << "Error: " << e.what() << std::endl;
+  }
+}

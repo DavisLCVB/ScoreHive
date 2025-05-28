@@ -69,31 +69,12 @@ else()
     message("Found system nlohmann_json")
 endif()
 
-set(SCORE_HIVE_SOURCES
-    source/main.cpp
-    source/pool/pool.cpp
-    source/server/server.cpp
-    source/actors/worker.cpp
-    source/client/client.cpp
-    source/system/environment.cpp
-)
-
-add_executable(ScoreHive ${SCORE_HIVE_SOURCES})
-target_include_directories(ScoreHive PRIVATE "${CMAKE_SOURCE_DIR}/source")
-target_include_directories(ScoreHive PRIVATE ${nlohmann_json_INCLUDE_DIRS})
-
-target_link_libraries(ScoreHive PRIVATE ${Boost_LIBRARIES})
-target_link_libraries(ScoreHive PRIVATE spdlog::spdlog)
-target_link_libraries(ScoreHive PRIVATE nlohmann_json::nlohmann_json)
-
-get_target_property(SPDLOG_INCLUDE_DIRS spdlog::spdlog INTERFACE_INCLUDE_DIRECTORIES)
-
-if(SPDLOG_INCLUDE_DIRS)
-    target_include_directories(ScoreHive SYSTEM PRIVATE ${SPDLOG_INCLUDE_DIRS})
+if(IS_DIRECTORY "${CMAKE_SOURCE_DIR}/worker")
+    message("Building worker")
+    add_subdirectory(worker)
 endif()
 
-if(IS_DIRECTORY "${CMAKE_SOURCE_DIR}/tests")
-    message("Building tests")
-    enable_testing()
-    add_subdirectory(tests)
+if(IS_DIRECTORY "${CMAKE_SOURCE_DIR}/dispatcher")
+    message("Building dispatcher")
+    add_subdirectory(dispatcher)
 endif()
