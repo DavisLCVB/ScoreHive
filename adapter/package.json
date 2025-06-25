@@ -4,7 +4,6 @@
   "main": "adapter.js",
   "scripts": {
     "start": "node adapter.js",
-    "server:tcp": "node test-client.js --server 8080",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "author": "bayes",
