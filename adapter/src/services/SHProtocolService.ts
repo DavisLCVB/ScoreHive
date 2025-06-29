@@ -5,7 +5,7 @@ export class SHProtocolService {
   private tcpPool: TCPPool;
   private timeout: number;
 
-  constructor(timeout: number = 10000) {
+  constructor(timeout: number = 60000) {
     this.tcpPool = new TCPPool();
     this.timeout = timeout;
   }

@@ -6,6 +6,26 @@ interface Answer {
 }
 
 export class AnswerRepository {
+  async testConnection(): Promise<void> {
+    try {
+      const { data, error } = await supabase
+        .from("answerkey")
+        .select("*")
+        .limit(1);
+      
+      if (error) {
+        console.error("Supabase connection test failed:", error);
+        throw new Error(`Table access error: ${error.message}`);
+      }
+      
+      console.log("Supabase connection test successful");
+      console.log("Sample data structure:", data);
+    } catch (err) {
+      console.error("Connection test error:", err);
+      throw err;
+    }
+  }
+
   async createAnswers(
     processId: string,
     areaId: string,
@@ -18,14 +38,23 @@ export class AnswerRepository {
       right_answer_index: answer.right_answer_index,
     }));
 
+    console.log("Attempting to insert:", dataToInsert);
+    
     const { data, error } = await supabase
-      .from("AnswerKey")
+      .from("answerkey")
       .insert(dataToInsert)
       .select();
 
+    console.log("Insert result - data:", data);
+    console.log("Insert result - error:", error);
+
     if (error) {
-      console.error("Supabase insert error:", error);
-      throw new Error(error.message);
+      console.error("Supabase insert error details:", JSON.stringify(error, null, 2));
+      console.error("Error code:", error.code);
+      console.error("Error message:", error.message);
+      console.error("Error hint:", error.hint);
+      console.error("Error details:", error.details);
+      throw new Error(error.message || `Supabase error: ${JSON.stringify(error)}`);
     }
     return data;
   }
@@ -37,7 +66,7 @@ export class AnswerRepository {
   ): Promise<any> {
     // First, delete existing answers for the given processId and areaId
     const { error: deleteError } = await supabase
-      .from("AnswerKey")
+      .from("answerkey")
       .delete()
       .eq("process_id", processId)
       .eq("area_id", areaId);
@@ -52,7 +81,7 @@ export class AnswerRepository {
 
   async deleteAnswers(processId: string, areaId: string): Promise<any> {
     const { error } = await supabase
-      .from("AnswerKey")
+      .from("answerkey")
       .delete()
       .eq("process_id", processId)
       .eq("area_id", areaId);
@@ -65,7 +94,7 @@ export class AnswerRepository {
 
   async getAnswers(processId: string, areaId: string): Promise<any> {
     const { data, error } = await supabase
-      .from("AnswerKey")
+      .from("answerkey")
       .select("question_index, right_answer_index")
       .eq("process_id", processId)
       .eq("area_id", areaId);

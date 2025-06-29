@@ -56,13 +56,14 @@ void MPICoordinator::create_types() {
     MPI_Type_commit(&_mpi_result_type);
   }
   {
-    i32 count = 4;
-    i32 block_lengths[] = {37, 37, 37, 1};  // 37 chars for each UUID
+    i32 count = 5;
+    i32 block_lengths[] = {37, 37, 37, 37, 1};  // 37 chars for each UUID + request_id
     MPI_Aint displacements[] = {offsetof(MPIExamHeader, id_exam),
                                 offsetof(MPIExamHeader, process),
                                 offsetof(MPIExamHeader, area),
+                                offsetof(MPIExamHeader, request_id),
                                 offsetof(MPIExamHeader, answers_size)};
-    MPI_Datatype types[] = {MPI_CHAR, MPI_CHAR, MPI_CHAR, MPI_INT};
+    MPI_Datatype types[] = {MPI_CHAR, MPI_CHAR, MPI_CHAR, MPI_CHAR, MPI_INT};
     MPI_Type_create_struct(count, block_lengths, displacements, types,
                            &_mpi_exam_header_type);
     MPI_Type_commit(&_mpi_exam_header_type);
@@ -101,6 +102,8 @@ void MPICoordinator::send_exam_batch(const std::vector<MPIExam>& exams,
     header.process[36] = '\0';
     strncpy(header.area, exam.area.c_str(), 36);
     header.area[36] = '\0';
+    strncpy(header.request_id, exam.request_id.c_str(), 36);
+    header.request_id[36] = '\0';
     header.answers_size = size;
     send_result = MPI_Send(&header, 1, _mpi_exam_header_type, dest_rank, tag,
                            MPI_COMM_WORLD);
@@ -148,6 +151,7 @@ std::vector<MPIExam> MPICoordinator::receive_exam_batch(i32 source_rank,
     exam.id_exam = std::string(header.id_exam);
     exam.process = std::string(header.process);
     exam.area = std::string(header.area);
+    exam.request_id = std::string(header.request_id);
   }
   return exams;
 }
@@ -248,6 +252,7 @@ std::vector<std::vector<MPIExam>> MPICoordinator::_slice_exams(
         mpi_exam.id_exam = exam["id_exam"];
         mpi_exam.process = exam["process"];
         mpi_exam.area = exam["area"];
+        mpi_exam.request_id = exam["request_id"];
         mpi_exam.answers.resize(exam["answers"].size());
         for (size_t k = 0; k < exam["answers"].size(); k++) {
           mpi_exam.answers[k].qst_idx = exam["answers"][k]["qst_idx"];
@@ -339,6 +344,7 @@ json MPICoordinator::receive_results_from_workers(i32 mpi_size) {
     db_result.id_exam = result.id_exam;
     db_result.process = result.process;
     db_result.area = result.area;
+    db_result.request_id = result.request_id;
     db_result.correct_answers = result.correct_answers;
     db_result.wrong_answers = result.wrong_answers;
     db_result.unscored_answers = result.unscored_answers;

@@ -79,8 +79,8 @@ bool Database::save_exam_results(const std::vector<ExamResult>& results) {
     try {
         pqxx::work txn(*_db_connection);
         for (const auto& result : results) {
-            txn.exec(pqxx::zview("SELECT save_exam_result($1, $2, $3, $4, $5, $6, $7)"),
-                            pqxx::params(result.id_exam, result.process, result.area,
+            txn.exec(pqxx::zview("SELECT save_exam_result($1, $2, $3, $4, $5, $6, $7, $8)"),
+                            pqxx::params(result.id_exam, result.process, result.area, result.request_id,
                             result.correct_answers, result.wrong_answers,
                             result.unscored_answers, result.score));
         }

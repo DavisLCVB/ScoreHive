@@ -17,6 +17,7 @@ CREATE OR REPLACE FUNCTION save_exam_result(
     p_id_exam UUID,
     p_process_id UUID,
     p_area_id UUID,
+    p_request_id UUID,
     p_correct_answers INT,
     p_wrong_answers INT,
     p_unscored_answers INT,
@@ -25,11 +26,12 @@ CREATE OR REPLACE FUNCTION save_exam_result(
 RETURNS VOID
 AS $$
 BEGIN
-    INSERT INTO ExamResult (id_exam, process_id, area_id, correct_answers, wrong_answers, unscored_answers, score)
-    VALUES (p_id_exam, p_process_id, p_area_id, p_correct_answers, p_wrong_answers, p_unscored_answers, p_score)
+    INSERT INTO ExamResult (id_exam, process_id, area_id, request_id, correct_answers, wrong_answers, unscored_answers, score)
+    VALUES (p_id_exam, p_process_id, p_area_id, p_request_id, p_correct_answers, p_wrong_answers, p_unscored_answers, p_score)
     ON CONFLICT (id_exam) DO UPDATE SET
         process_id = EXCLUDED.process_id,
         area_id = EXCLUDED.area_id,
+        request_id = EXCLUDED.request_id,
         correct_answers = EXCLUDED.correct_answers,
         wrong_answers = EXCLUDED.wrong_answers,
         unscored_answers = EXCLUDED.unscored_answers,
@@ -43,6 +45,7 @@ RETURNS TABLE(
     id_exam UUID,
     process_id UUID,
     area_id UUID,
+    request_id UUID,
     correct_answers INT,
     wrong_answers INT,
     unscored_answers INT,
@@ -51,7 +54,7 @@ RETURNS TABLE(
 AS $$
 BEGIN
     RETURN QUERY
-    SELECT er.id_exam, er.process_id, er.area_id, er.correct_answers, er.wrong_answers, er.unscored_answers, er.score
+    SELECT er.id_exam, er.process_id, er.area_id, er.request_id, er.correct_answers, er.wrong_answers, er.unscored_answers, er.score
     FROM ExamResult er
     WHERE er.process_id = p_process_id;
 END;

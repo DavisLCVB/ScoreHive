@@ -33,6 +33,7 @@ MPIResult Evaluator::_evaluate_exam(const MPIExam& exam) {
     return MPIResult{exam.id_exam,
                      exam.process,
                      exam.area,
+                     exam.request_id,
                      0,
                      0,
                      static_cast<i32>(student_answers.size()),
@@ -57,6 +58,6 @@ MPIResult Evaluator::_evaluate_exam(const MPIExam& exam) {
                  wrong_answers_count * _scores.wrong_answer +
                  unscored_answers_count * _scores.unscored_answer;
   return MPIResult{
-      exam.id_exam,           exam.process,           exam.area,
+      exam.id_exam,           exam.process,           exam.area, exam.request_id,
       correct_answers_count, wrong_answers_count, unscored_answers_count, score};
 }

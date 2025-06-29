@@ -1,6 +1,8 @@
 export interface ExamData {
-  student_id: string;
+  student_id?: string;
   exam_id?: string;
+  process_id?: string;
+  area_id?: string;
   answers: string[];
 }
 
@@ -58,3 +60,38 @@ export const COMMAND_NAMES: Record<number, string> = {
   [SHCommand.ECHO]: 'ECHO',
   [SHCommand.SHUTDOWN]: 'SHUTDOWN'
 };
+
+export interface RequestStatus {
+  id: string;
+  total_exams: number;
+  processed_exams: number;
+  failed_exams: number;
+  chunks_total: number;
+  chunks_completed: number;
+  status: 'pending' | 'processing' | 'completed' | 'failed' | 'partial';
+  created_at: Date;
+  updated_at: Date;
+  completed_at?: Date;
+  error_message?: string;
+}
+
+export interface ExamChunk {
+  chunk_id: string;
+  request_id: string;
+  exams: ExamWithRequestId[];
+  chunk_index: number;
+  total_chunks: number;
+}
+
+export interface ExamWithRequestId extends ExamData {
+  request_id: string;
+  chunk_id: string;
+}
+
+export interface AsyncGradeResponse {
+  success: boolean;
+  request_id: string;
+  message: string;
+  status: RequestStatus;
+  timestamp: string;
+}

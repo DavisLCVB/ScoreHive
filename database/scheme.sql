@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS ExamResult (
     id_exam UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     process_id UUID NOT NULL,
     area_id UUID NOT NULL,
+    request_id UUID NOT NULL,
     correct_answers INT NOT NULL,
     wrong_answers INT NOT NULL,
     unscored_answers INT NOT NULL,
@@ -31,3 +32,18 @@ CREATE TABLE IF NOT EXISTS AnswerKey (
     FOREIGN KEY (process_id) REFERENCES Process(id),
     FOREIGN KEY (area_id) REFERENCES Area(id)
 );
+
+CREATE TABLE IF NOT EXISTS RequestStatus (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    total_exams INT NOT NULL,
+    processed_exams INT DEFAULT 0,
+    failed_exams INT DEFAULT 0,
+    chunks_total INT NOT NULL,
+    chunks_completed INT DEFAULT 0,
+    status VARCHAR(50) DEFAULT 'pending' CHECK (status IN ('pending', 'processing', 'completed', 'failed', 'partial')),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    completed_at TIMESTAMP NULL,
+    error_message TEXT NULL
+);
+

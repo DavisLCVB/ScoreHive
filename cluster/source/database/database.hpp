@@ -20,10 +20,19 @@ struct ExamResult {
   std::string id_exam;   // UUID string
   std::string process;   // Process UUID
   std::string area;      // Area UUID
+  std::string request_id; // Request UUID for tracking
   i32 correct_answers;
   i32 wrong_answers;
   i32 unscored_answers;
   double score;
+
+  ExamResult(const std::string& id_exam, const std::string& process, const std::string& area,
+             i32 correct_answers, i32 wrong_answers, i32 unscored_answers, double score)
+    : id_exam(id_exam), process(process), area(area), request_id(""),
+      correct_answers(correct_answers), wrong_answers(wrong_answers),
+      unscored_answers(unscored_answers), score(score) {}
+
+  ExamResult() = default;
 };
 
 /**

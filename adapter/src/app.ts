@@ -4,6 +4,9 @@ import { SHProtocolService } from "./services/SHProtocolService";
 import { ExamService } from "./services/ExamService";
 import { ExamController } from "./controllers/ExamController";
 import { createExamRoutes } from "./routes/examRoutes";
+import { createProcessRoutes } from "./routes/processRoutes";
+import { createAreaRoutes } from "./routes/areaRoutes";
+import { createAnswerRoutes } from "./routes/answerRoutes";
 
 export class AdapterApp {
   private app: express.Application;
@@ -35,8 +38,18 @@ export class AdapterApp {
   }
 
   private setupRoutes(): void {
+    // Rutas principales (exámenes y sistema)
     const examRoutes = createExamRoutes(this.examController);
     this.app.use("/", examRoutes);
+
+    // Rutas de gestión de datos
+    const processRoutes = createProcessRoutes();
+    const areaRoutes = createAreaRoutes();
+    const answerRoutes = createAnswerRoutes();
+
+    this.app.use("/processes", processRoutes);
+    this.app.use("/areas", areaRoutes);
+    this.app.use("/answers", answerRoutes);
   }
 
   async start(port: number = 3001): Promise<void> {

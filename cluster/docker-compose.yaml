@@ -1,19 +1,4 @@
 services:
-  postgres:
-    image: postgres:16
-    container_name: scorehive-postgres
-    hostname: scorehive-postgres
-    networks:
-      - scorehive-net
-    environment:
-      POSTGRES_DB: scorehive_db
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: mysecretpassword
-    volumes:
-      - ./database/scheme.sql:/docker-entrypoint-initdb.d/10-scheme.sql
-      - ./database/functions.sql:/docker-entrypoint-initdb.d/20-functions.sql
-      - postgres_data:/var/lib/postgresql/data
-
   mpi-master:
     image: scorehive-mpi:latest
     container_name: scorehive-master
@@ -26,13 +11,12 @@ services:
       - ./hostfile:/app/hostfile:ro
     environment:
       - DEBUG=1
-      - PGDATABASE=scorehive_db
+      - PGDATABASE=postgres
       - PGUSER=postgres
-      - PGPASSWORD=mysecretpassword
-      - PGHOST=scorehive-postgres
+      - PGPASSWORD=KFtUD55WX?zeyouCs?AU?D%e#abofb?3kEapJWnoz9qptd3X9#
+      - PGHOST=db.jikiuecnscwfkilklxgo.supabase.co
       - PGPORT=5432
     depends_on:
-      - postgres
       - mpi-worker1
       - mpi-worker2
       - mpi-worker3
@@ -45,13 +29,11 @@ services:
       - scorehive-net
     environment:
       - DEBUG=1
-      - PGDATABASE=scorehive_db
+      - PGDATABASE=postgres
       - PGUSER=postgres
-      - PGPASSWORD=mysecretpassword
-      - PGHOST=scorehive-postgres
+      - PGPASSWORD=KFtUD55WX?zeyouCs?AU?D%e#abofb?3kEapJWnoz9qptd3X9#
+      - PGHOST=db.jikiuecnscwfkilklxgo.supabase.co
       - PGPORT=5432
-    depends_on:
-      - postgres
 
   mpi-worker2:
     image: scorehive-mpi:latest
@@ -61,13 +43,11 @@ services:
       - scorehive-net
     environment:
       - DEBUG=1
-      - PGDATABASE=scorehive_db
+      - PGDATABASE=postgres
       - PGUSER=postgres
-      - PGPASSWORD=mysecretpassword
-      - PGHOST=scorehive-postgres
+      - PGPASSWORD=KFtUD55WX?zeyouCs?AU?D%e#abofb?3kEapJWnoz9qptd3X9#
+      - PGHOST=db.jikiuecnscwfkilklxgo.supabase.co
       - PGPORT=5432
-    depends_on:
-      - postgres
 
   mpi-worker3:
     image: scorehive-mpi:latest
@@ -77,17 +57,12 @@ services:
       - scorehive-net
     environment:
       - DEBUG=1
-      - PGDATABASE=scorehive_db
+      - PGDATABASE=postgres
       - PGUSER=postgres
-      - PGPASSWORD=mysecretpassword
-      - PGHOST=scorehive-postgres
+      - PGPASSWORD=KFtUD55WX?zeyouCs?AU?D%e#abofb?3kEapJWnoz9qptd3X9#
+      - PGHOST=db.jikiuecnscwfkilklxgo.supabase.co
       - PGPORT=5432
-    depends_on:
-      - postgres
 
 networks:
   scorehive-net:
     driver: bridge
-
-volumes:
-  postgres_data:

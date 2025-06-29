@@ -6,6 +6,7 @@
 #include <server/server.hpp>
 #include <system/aliases.hpp>
 #include <system/logger.hpp>
+#include <database/database.hpp>
 #include <thread>
 
 i32 main(i32 argc, char** argv) {
@@ -21,6 +22,14 @@ i32 main(i32 argc, char** argv) {
     
     // Start the server asynchronously
     server.start();
+    
+    // Initialize database connection
+    if (!Database::instance().initialize("")) {
+        spdlog::error("Failed to initialize database connection");
+        MPI_Finalize();
+        return 1;
+    }
+    spdlog::info("Database connection initialized successfully");
     
     // Run the io_context in a separate thread to handle async operations
     std::thread io_thread([&io_context]() {

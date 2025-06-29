@@ -27,6 +27,7 @@ struct MPIExam {
   std::string id_exam;   // UUID string
   std::string process;   // Process UUID for database lookup
   std::string area;      // Area UUID (engineering, medicine, etc.)
+  std::string request_id; // Request UUID for tracking
   std::vector<MPIQuestion> answers;
 };
 
@@ -34,6 +35,7 @@ struct MPIExamHeader {
   char id_exam[37];   // UUID string (36 chars + null terminator)
   char process[37];   // Process UUID (36 chars + null terminator)
   char area[37];      // Area UUID (36 chars + null terminator)
+  char request_id[37]; // Request UUID (36 chars + null terminator)
   i32 answers_size;
 };
 
@@ -46,11 +48,12 @@ struct MPIResult {
   std::string id_exam;  // UUID string
   std::string process;  // Process UUID
   std::string area;     // Area UUID
+  std::string request_id; // Request UUID for tracking
   i32 correct_answers;
   i32 wrong_answers;
   i32 unscored_answers;
   double score;
-  NLOHMANN_DEFINE_TYPE_INTRUSIVE(MPIResult, id_exam, process, area, correct_answers,
+  NLOHMANN_DEFINE_TYPE_INTRUSIVE(MPIResult, id_exam, process, area, request_id, correct_answers,
                                  wrong_answers, unscored_answers, score)
 };
 
