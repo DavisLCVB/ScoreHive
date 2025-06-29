@@ -7,6 +7,7 @@
 #include <nlohmann/json.hpp>
 #include <system/aliases.hpp>
 #include <vector>
+#include <string>
 
 using json = nlohmann::json;
 
@@ -23,14 +24,16 @@ struct MPIQuestion {
 };
 
 struct MPIExam {
-  i32 stage;
-  i32 id_exam;
+  std::string id_exam;   // UUID string
+  std::string process;   // Process UUID for database lookup
+  std::string area;      // Area UUID (engineering, medicine, etc.)
   std::vector<MPIQuestion> answers;
 };
 
 struct MPIExamHeader {
-  i32 stage;
-  i32 id_exam;
+  char id_exam[37];   // UUID string (36 chars + null terminator)
+  char process[37];   // Process UUID (36 chars + null terminator)
+  char area[37];      // Area UUID (36 chars + null terminator)
   i32 answers_size;
 };
 
@@ -40,13 +43,14 @@ enum class MPICommand : u8 {
 };
 
 struct MPIResult {
-  i32 stage;
-  i32 id_exam;
+  std::string id_exam;  // UUID string
+  std::string process;  // Process UUID
+  std::string area;     // Area UUID
   i32 correct_answers;
   i32 wrong_answers;
   i32 unscored_answers;
   double score;
-  NLOHMANN_DEFINE_TYPE_INTRUSIVE(MPIResult, stage, id_exam, correct_answers,
+  NLOHMANN_DEFINE_TYPE_INTRUSIVE(MPIResult, id_exam, process, area, correct_answers,
                                  wrong_answers, unscored_answers, score)
 };
 

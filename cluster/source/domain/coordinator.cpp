@@ -1,6 +1,9 @@
 #include "coordinator.hpp"
 #include <spdlog/spdlog.h>
 #include <domain/answers.hpp>
+#include <database/database.hpp>
+#include <set>
+#include <cstring>
 
 std::unique_ptr<MPICoordinator> MPICoordinator::_instance = nullptr;
 
@@ -36,28 +39,30 @@ void MPICoordinator::create_types() {
     MPI_Type_commit(&_mpi_question_type);
   }
   {
-    i32 count = 6;
-    i32 block_lengths[] = {1, 1, 1, 1, 1, 1};
-    MPI_Aint displacements[] = {offsetof(MPIResult, stage),
-                                offsetof(MPIResult, id_exam),
+    i32 count = 7;
+    i32 block_lengths[] = {1, 1, 1, 1, 1, 1, 1};
+    MPI_Aint displacements[] = {offsetof(MPIResult, id_exam),
+                                offsetof(MPIResult, process),
+                                offsetof(MPIResult, area),
                                 offsetof(MPIResult, correct_answers),
                                 offsetof(MPIResult, wrong_answers),
                                 offsetof(MPIResult, unscored_answers),
                                 offsetof(MPIResult, score)};
     MPI_Datatype types[] = {MPI_INT, MPI_INT, MPI_INT,
-                            MPI_INT, MPI_INT, MPI_DOUBLE};
+                            MPI_INT, MPI_INT, MPI_INT, MPI_DOUBLE};
 
     MPI_Type_create_struct(count, block_lengths, displacements, types,
                            &_mpi_result_type);
     MPI_Type_commit(&_mpi_result_type);
   }
   {
-    i32 count = 3;
-    i32 block_lengths[] = {1, 1, 1};
-    MPI_Aint displacements[] = {offsetof(MPIExamHeader, stage),
-                                offsetof(MPIExamHeader, id_exam),
+    i32 count = 4;
+    i32 block_lengths[] = {37, 37, 37, 1};  // 37 chars for each UUID
+    MPI_Aint displacements[] = {offsetof(MPIExamHeader, id_exam),
+                                offsetof(MPIExamHeader, process),
+                                offsetof(MPIExamHeader, area),
                                 offsetof(MPIExamHeader, answers_size)};
-    MPI_Datatype types[] = {MPI_INT, MPI_INT, MPI_INT};
+    MPI_Datatype types[] = {MPI_CHAR, MPI_CHAR, MPI_CHAR, MPI_INT};
     MPI_Type_create_struct(count, block_lengths, displacements, types,
                            &_mpi_exam_header_type);
     MPI_Type_commit(&_mpi_exam_header_type);
@@ -89,7 +94,14 @@ void MPICoordinator::send_exam_batch(const std::vector<MPIExam>& exams,
   i32 size = 0;
   for (const auto& exam : exams) {
     size = static_cast<i32>(exam.answers.size());
-    header = {exam.stage, exam.id_exam, size};
+    // Convert string UUIDs to char arrays
+    strncpy(header.id_exam, exam.id_exam.c_str(), 36);
+    header.id_exam[36] = '\0';
+    strncpy(header.process, exam.process.c_str(), 36);
+    header.process[36] = '\0';
+    strncpy(header.area, exam.area.c_str(), 36);
+    header.area[36] = '\0';
+    header.answers_size = size;
     send_result = MPI_Send(&header, 1, _mpi_exam_header_type, dest_rank, tag,
                            MPI_COMM_WORLD);
     if (send_result != MPI_SUCCESS) {
@@ -113,7 +125,7 @@ std::vector<MPIExam> MPICoordinator::receive_exam_batch(i32 source_rank,
   if (recv_result != MPI_SUCCESS) {
     throw std::runtime_error("Failed to receive exam batch size");
   }
-  if (batch_size <= 0 || batch_size > std::numeric_limits<i16>::max()) {
+  if (batch_size <= 0 || batch_size > std::numeric_limits<i32>::max()) {
     throw std::runtime_error("Invalid exam batch size");
   }
   std::vector<MPIExam> exams(batch_size);
@@ -133,8 +145,9 @@ std::vector<MPIExam> MPICoordinator::receive_exam_batch(i32 source_rank,
         throw std::runtime_error("Failed to receive exam answers");
       }
     }
-    exam.stage = header.stage;
-    exam.id_exam = header.id_exam;
+    exam.id_exam = std::string(header.id_exam);
+    exam.process = std::string(header.process);
+    exam.area = std::string(header.area);
   }
   return exams;
 }
@@ -161,7 +174,7 @@ std::string MPICoordinator::receive_answers(i32 source_rank, i32 tag) {
   if (recv_result != MPI_SUCCESS) {
     throw std::runtime_error("Failed to receive answers size");
   }
-  if (answers_size <= 0 || answers_size > std::numeric_limits<i16>::max()) {
+  if (answers_size <= 0 || answers_size > std::numeric_limits<i32>::max()) {
     throw std::runtime_error("Invalid answers size");
   }
   std::string answers(answers_size, '\0');
@@ -198,7 +211,7 @@ std::vector<MPIResult> MPICoordinator::receive_results(i32 source_rank,
   if (recv_result != MPI_SUCCESS) {
     throw std::runtime_error("Failed to receive results size");
   }
-  if (results_size <= 0 || results_size > std::numeric_limits<i16>::max()) {
+  if (results_size <= 0 || results_size > std::numeric_limits<i32>::max()) {
     throw std::runtime_error("Invalid results size");
   }
   std::vector<MPIResult> results(results_size);
@@ -232,8 +245,9 @@ std::vector<std::vector<MPIExam>> MPICoordinator::_slice_exams(
         json exam = exams[j];
         auto& slice = exams_slices[i];
         MPIExam& mpi_exam = slice[j - start_idx];
-        mpi_exam.stage = exam["stage"];
         mpi_exam.id_exam = exam["id_exam"];
+        mpi_exam.process = exam["process"];
+        mpi_exam.area = exam["area"];
         mpi_exam.answers.resize(exam["answers"].size());
         for (size_t k = 0; k < exam["answers"].size(); k++) {
           mpi_exam.answers[k].qst_idx = exam["answers"][k]["qst_idx"];
@@ -251,15 +265,51 @@ std::vector<std::vector<MPIExam>> MPICoordinator::_slice_exams(
 void MPICoordinator::send_to_workers(const json& exams_to_review,
                                      i32 mpi_size) {
   auto exams_slices = _slice_exams(exams_to_review, mpi_size);
+  
+  // Get ALL unique process-area pairs from ALL exams
+  std::set<std::pair<std::string, std::string>> all_unique_process_areas;
+  for (const auto& slice : exams_slices) {
+    for (const auto& exam : slice) {
+      all_unique_process_areas.insert({exam.process, exam.area});
+    }
+  }
+  
+  // Single database query for ALL process-area answer keys
+  json all_answer_keys_json = json::array();
+  for (const auto& pa : all_unique_process_areas) {
+    auto answer_keys = Database::instance().get_answer_keys(pa.first, pa.second);
+    json process_answers;
+    process_answers["process"] = pa.first;
+    process_answers["area"] = pa.second; // Include area in the JSON
+    json answers_array = json::array();
+    for (const auto& [qst_idx, ans_idx] : answer_keys) {
+      json answer_obj;
+      answer_obj["qst_idx"] = qst_idx;
+      answer_obj["rans_idx"] = ans_idx;
+      answers_array.push_back(answer_obj);
+    }
+    process_answers["answers"] = answers_array;
+    all_answer_keys_json.push_back(process_answers);
+  }
+  
+  // Load answer keys into AnswersManager (reusing SET_ANSWERS functionality)
+  AnswersManager::instance().load_from_json(all_answer_keys_json);
+  
+  // Now distribute work to workers (they'll get all answer keys they need)
   auto size = exams_slices.size();
   for (size_t i = 0; i < size; i++) {
     auto exam_slice = exams_slices[i];
-    auto required_stages = std::vector<i32>(exam_slice.size());
-    std::transform(exam_slice.begin(), exam_slice.end(),
-                   required_stages.begin(),
-                   [](const MPIExam& exam) { return exam.stage; });
-    auto answer_keys_serialized =
-        AnswersManager::instance().serialize_for_mpi(required_stages);
+    
+    // Get process UUIDs needed for this specific slice
+    std::set<std::string> slice_processes;
+    for (const auto& exam : exam_slice) {
+      slice_processes.insert(exam.process);
+    }
+    
+    // Serialize only the answer keys needed for this slice
+    std::vector<std::string> required_processes(slice_processes.begin(), slice_processes.end());
+    auto answer_keys_serialized = AnswersManager::instance().serialize_for_mpi(required_processes);
+    
     auto worker_rank = i + 1;  // 0 is master
     send_command(MPICommand::REVIEW, worker_rank, _config.mpi_tag_command);
     send_answers(answer_keys_serialized, worker_rank, _config.mpi_tag_answers);
@@ -281,6 +331,28 @@ json MPICoordinator::receive_results_from_workers(i32 mpi_size) {
     auto worker_results = receive_results(worker_rank, _config.mpi_tag_results);
     results.insert(results.end(), worker_results.begin(), worker_results.end());
   }
+  
+  // Save results to database
+  std::vector<ExamResult> db_results;
+  for (const auto& result : results) {
+    ExamResult db_result;
+    db_result.id_exam = result.id_exam;
+    db_result.process = result.process;
+    db_result.area = result.area;
+    db_result.correct_answers = result.correct_answers;
+    db_result.wrong_answers = result.wrong_answers;
+    db_result.unscored_answers = result.unscored_answers;
+    db_result.score = result.score;
+    db_results.push_back(db_result);
+  }
+  
+  bool saved_successfully = Database::instance().save_exam_results(db_results);
+  if (!saved_successfully) {
+    spdlog::error("Failed to save exam results to database");
+  } else {
+    spdlog::info("Successfully saved {} exam results to database", db_results.size());
+  }
+  
   json results_json = results;
   return results_json;
 }

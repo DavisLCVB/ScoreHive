@@ -1,126 +1,156 @@
 #include "server.hpp"
 #include <mpi.h>
-#include <netinet/in.h>
 #include <spdlog/spdlog.h>
-#include <sys/socket.h>
 #include <array>
 #include <cstring>
 #include <domain/answers.hpp>
 #include <domain/coordinator.hpp>
 #include <nlohmann/json.hpp>
+#include <server/watcher.hpp>
 #include <sstream>
 #include <string>
 
 using json = nlohmann::json;
 
-Server::Server(const ServerConfig& config) : _config(config) {}
+Server::Server(boost::asio::io_context& io_context, const ServerConfig& config)
+    : _io_context(io_context), _config(config) {
+  MPI_Comm_size(MPI_COMM_WORLD, &_mpi_size);
+}
 
 void Server::start() {
-  spdlog::info("Starting server...");
-  // AF_INET: IPv4 protocol
-  // SOCK_STREAM: TCP protocol
-  // 0: Default protocol
-  i32 socket_fd =
-      socket(AF_INET, SOCK_STREAM, 0);  // Create the listening socket
-  if (socket_fd == -1) {
-    _handle_error();
+  spdlog::info("Starting async server on port {}...", _config.port);
+
+  // Start MPIWatcher
+  MPIWatcher::instance().start(_io_context, _mpi_size);
+
+  // Create acceptor
+  _acceptor = std::make_unique<boost::asio::ip::tcp::acceptor>(_io_context);
+
+  boost::asio::ip::tcp::endpoint endpoint(boost::asio::ip::tcp::v4(),
+                                          _config.port);
+  _acceptor->open(endpoint.protocol());
+  _acceptor->set_option(boost::asio::ip::tcp::acceptor::reuse_address(true));
+  _acceptor->bind(endpoint);
+  _acceptor->listen(_config.backlog);
+
+  _start_accept();
+  spdlog::info("Server started successfully");
+}
+
+void Server::stop() {
+  spdlog::info("Stopping server...");
+  _shutdown = true;
+
+  if (_acceptor) {
+    _acceptor->close();
   }
-  MPI_Comm_size(MPI_COMM_WORLD, &_mpi_size);
-  sockaddr_in address = {
-      .sin_family = AF_INET,            // IPv4
-      .sin_port = htons(_config.port),  // Port 8080
-      .sin_addr = {htonl(INADDR_ANY)},  // Any IP address
-      .sin_zero = {0}                   // Pad to size of `struct sockaddr'
-  };
-  sockaddr* address_ptr = reinterpret_cast<sockaddr*>(&address);
-  // Bind the socket to the address and port
-  auto bind_result = bind(socket_fd, address_ptr, sizeof(address));
-  if (bind_result == -1) {
-    _handle_error();
+
+  MPIWatcher::instance().stop();
+  spdlog::info("Server stopped");
+}
+
+void Server::_start_accept() {
+  if (_shutdown) {
+    return;
   }
-  // Listen for incoming connections
-  auto listen_result = listen(socket_fd, _config.backlog);
-  if (listen_result == -1) {
-    _handle_error();
+
+  auto socket = std::make_shared<boost::asio::ip::tcp::socket>(_io_context);
+
+  _acceptor->async_accept(
+      *socket, [this, socket](const boost::system::error_code& error) {
+        _handle_accept(socket, error);
+      });
+}
+
+void Server::_handle_accept(
+    std::shared_ptr<boost::asio::ip::tcp::socket> socket,
+    const boost::system::error_code& error) {
+  if (!error) {
+    spdlog::debug("Client connected from {}",
+                  socket->remote_endpoint().address().to_string());
+    _handle_client(socket);
+  } else {
+    spdlog::error("Accept error: {}", error.message());
   }
-  while (!_shutdown) {
-    spdlog::info("Server waiting for client on port 8080");
-    // Accept an incoming connection
-    auto accept_result = accept(socket_fd, nullptr, nullptr);
-    if (accept_result == -1) {
-      _handle_error();
-      continue;
+
+  _start_accept();
+}
+
+void Server::_handle_client(
+    std::shared_ptr<boost::asio::ip::tcp::socket> socket) {
+  auto buffer = std::make_shared<std::vector<char>>(8192);
+  auto message = std::make_shared<std::string>();
+
+  _read_async(socket, buffer, message);
+}
+
+void Server::_read_async(std::shared_ptr<boost::asio::ip::tcp::socket> socket,
+                         std::shared_ptr<std::vector<char>> buffer,
+                         std::shared_ptr<std::string> message) {
+  socket->async_read_some(
+      boost::asio::buffer(*buffer),
+      [this, socket, buffer, message](const boost::system::error_code& error,
+                                      std::size_t bytes_transferred) {
+        _handle_read(socket, buffer, message, error, bytes_transferred);
+      });
+}
+
+void Server::_handle_read(std::shared_ptr<boost::asio::ip::tcp::socket> socket,
+                          std::shared_ptr<std::vector<char>> buffer,
+                          std::shared_ptr<std::string> message,
+                          const boost::system::error_code& error,
+                          std::size_t bytes_transferred) {
+  if (error) {
+    if (error != boost::asio::error::eof) {
+      spdlog::error("Read error: {}", error.message());
     }
-    // Set the client socket file descriptor
-    _client_socket_fd = accept_result;
-    auto read_result = _read();
-    if (!read_result) {
-      _parse_response();
-      auto response = _parse_response();
-      auto send_result =
-          send(_client_socket_fd, response.c_str(), response.size(), 0);
-      if (send_result == -1) {
-        _handle_error();
+    return;
+  }
+
+  message->append(buffer->data(), bytes_transferred);
+
+  if (message->size() > _config.max_message_size) {
+    spdlog::error("Message size exceeds maximum allowed size");
+    ScoreHiveResponse error_response;
+    error_response.code = ScoreHiveResponseCode::ERROR;
+    error_response.data = "Message too large";
+    error_response.length = error_response.data.size();
+    _send_response(socket, error_response);
+    return;
+  }
+
+  // Check if we have a complete message (ends with '$')
+  if (message->find('$') != std::string::npos) {
+    ScoreHiveRequest request;
+    try {
+      _parse_request(*message, request);
+      spdlog::debug("Request parsed successfully");
+
+      // Handle different request types
+      if (request.command == ScoreHiveCommand::REVIEW) {
+        _handle_review(socket, request);
+      } else {
+        // Handle other commands synchronously
+        ScoreHiveResponse response;
+        _handle_request_sync(request, response);
+        _send_response(socket, response);
       }
-      close(_client_socket_fd);
-      continue;
+    } catch (const std::exception& e) {
+      spdlog::error("Failed to parse request: {}", e.what());
+      ScoreHiveResponse error_response;
+      error_response.code = ScoreHiveResponseCode::ERROR;
+      error_response.data = e.what();
+      error_response.length = error_response.data.size();
+      _send_response(socket, error_response);
     }
-    spdlog::debug("Request received from client");
-    _handle_request();
-    auto response = _parse_response();
-    auto send_result =
-        send(_client_socket_fd, response.c_str(), response.size(), 0);
-    if (send_result == -1) {
-      _handle_error();
-      close(_client_socket_fd);
-      continue;
-    }
-    spdlog::debug("Response sent to client");
-    close(_client_socket_fd);  // Close the client socket
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    // Sleep for 100ms to avoid busy-waiting
+  } else {
+    // Continue reading
+    _read_async(socket, buffer, message);
   }
 }
 
-void Server::_handle_error() {
-  auto error_string = std::string(strerror(errno));
-  spdlog::error("Failed to create socket: {}", error_string);
-  throw std::runtime_error(error_string);
-}
-
-bool Server::_read() {
-  try {
-    std::string message;
-    buffer<1024> buffer;
-    // Read the message until the delimiter is found ('$' defined in the protocol)
-    while (message.find('$') == std::string::npos) {
-      auto recv_result =
-          recv(_client_socket_fd, buffer.data(), buffer.size(), 0);
-      if (recv_result == -1) {
-        _handle_error();
-      }
-      if (recv_result == 0) {
-        spdlog::error("Connection closed by client");
-        return false;
-      }
-      message.append(buffer.data(), recv_result);
-      if (message.size() > _config.max_message_size) {
-        spdlog::error("Message size exceeds the maximum allowed size");
-        return false;
-      }
-    }
-    _parse_request(message);
-    return true;
-  } catch (std::exception& e) {
-    spdlog::error("Failed to read data: {}", e.what());
-    _response.code = ScoreHiveResponseCode::ERROR;
-    _response.length = strlen(e.what());
-    _response.data = e.what();
-    return false;
-  }
-}
-
-void Server::_parse_request(const std::string& message) {
+void Server::_parse_request(const std::string& message,
+                            ScoreHiveRequest& request) {
   std::istringstream iss(message);
   std::string token;
   if (!std::getline(iss, token, ' ') || token != "SH") {
@@ -138,15 +168,15 @@ void Server::_parse_request(const std::string& message) {
     throw std::runtime_error("Invalid command");
   }
   if (command == 0) {
-    _request.command = ScoreHiveCommand::GET_ANSWERS;
-    _request.length = 0;
-    _request.data = "";
+    request.command = ScoreHiveCommand::GET_ANSWERS;
+    request.length = 0;
+    request.data = "";
     return;
   }
   if (command == 4) {
-    _request.command = ScoreHiveCommand::SHUTDOWN;
-    _request.length = 0;
-    _request.data = "";
+    request.command = ScoreHiveCommand::SHUTDOWN;
+    request.length = 0;
+    request.data = "";
     return;
   }
   if (!std::getline(iss, token, ' ')) {
@@ -162,111 +192,145 @@ void Server::_parse_request(const std::string& message) {
   if (token.size() != length) {
     throw std::runtime_error("Data length mismatch");
   }
-  _request.command = static_cast<ScoreHiveCommand>(command);
-  _request.length = length;
-  _request.data = token;
+  request.command = static_cast<ScoreHiveCommand>(command);
+  request.length = length;
+  request.data = token;
 }
 
-void Server::_handle_request() {
-  switch (_request.command) {
+void Server::_handle_request_sync(const ScoreHiveRequest& request,
+                                  ScoreHiveResponse& response) {
+  switch (request.command) {
     case ScoreHiveCommand::GET_ANSWERS:
-      _handle_get_answers();
+      _handle_get_answers(request, response);
       break;
     case ScoreHiveCommand::SET_ANSWERS:
-      _handle_set_answers();
-      break;
-    case ScoreHiveCommand::REVIEW:
-      _handle_review();
+      _handle_set_answers(request, response);
       break;
     case ScoreHiveCommand::ECHO:
-      _handle_echo();
+      _handle_echo(request, response);
       break;
     case ScoreHiveCommand::SHUTDOWN:
-      _handle_shutdown();
+      _handle_shutdown(request, response);
       break;
     default:
-      _handle_bad_request();
+      _handle_bad_request(request, response);
       break;
   }
 }
 
-void Server::_handle_get_answers() {
+void Server::_handle_get_answers(
+    [[maybe_unused]] const ScoreHiveRequest& request,
+    ScoreHiveResponse& response) {
   auto data = AnswersManager::instance().save_to_json();
-  _response.code = ScoreHiveResponseCode::OK;
-  _response.length = data.size();
-  _response.data = data;
+  response.code = ScoreHiveResponseCode::OK;
+  response.length = data.size();
+  response.data = data;
 }
 
-void Server::_handle_set_answers() {
-  auto data = json::parse(_request.data);
+void Server::_handle_set_answers(const ScoreHiveRequest& request,
+                                 ScoreHiveResponse& response) {
+  auto data = json::parse(request.data);
   try {
     AnswersManager::instance().load_from_json(data);
   } catch (std::exception& e) {
     std::string message = "Set Answers Error: " + std::string(e.what());
     spdlog::error(message);
-    _response.code = ScoreHiveResponseCode::ERROR;
-    _response.length = message.size();
-    _response.data = message;
+    response.code = ScoreHiveResponseCode::ERROR;
+    response.length = message.size();
+    response.data = message;
     return;
   }
   std::string message = "Set Answers OK";
-  _response.code = ScoreHiveResponseCode::OK;
-  _response.length = message.size();
-  _response.data = message;
+  response.code = ScoreHiveResponseCode::OK;
+  response.length = message.size();
+  response.data = message;
 }
 
-void Server::_handle_review() {
-  auto exams_json = json::parse(_request.data);
+void Server::_handle_review(
+    std::shared_ptr<boost::asio::ip::tcp::socket> socket,
+    const ScoreHiveRequest& request) {
   try {
-    auto& coordinator = MPICoordinator::instance();
-    coordinator.send_to_workers(exams_json, _mpi_size);
-    auto results = coordinator.receive_results_from_workers(_mpi_size);
-    auto msg = results.dump();
-    _response.code = ScoreHiveResponseCode::OK;
-    _response.length = msg.size();
-    _response.data = msg;
-  } catch (std::exception& e) {
+    auto exams_json = json::parse(request.data);
+
+    // Enqueue the review request asynchronously
+    MPIWatcher::instance().enqueue_review_request(
+        exams_json, [this, socket](const ScoreHiveResponse& response) {
+          _send_response(socket, response);
+        });
+
+    spdlog::debug("Review request enqueued for async processing");
+  } catch (const std::exception& e) {
     std::string message = "Review Error: " + std::string(e.what());
     spdlog::error(message);
-    _response.code = ScoreHiveResponseCode::ERROR;
-    _response.length = message.size();
-    _response.data = message;
+
+    ScoreHiveResponse error_response;
+    error_response.code = ScoreHiveResponseCode::ERROR;
+    error_response.length = message.size();
+    error_response.data = message;
+
+    _send_response(socket, error_response);
   }
 }
 
-void Server::_handle_echo() {
-  auto data = _request.data;
+void Server::_handle_echo(const ScoreHiveRequest& request,
+                          ScoreHiveResponse& response) {
+  auto data = request.data;
   data = "Echo " + data;
-  _response.code = ScoreHiveResponseCode::OK;
-  _response.length = data.size();
-  _response.data = data;
+  response.code = ScoreHiveResponseCode::OK;
+  response.length = data.size();
+  response.data = data;
 }
 
-void Server::_handle_shutdown() {
+void Server::_handle_shutdown([[maybe_unused]] const ScoreHiveRequest& request,
+                              ScoreHiveResponse& response) {
   _shutdown = true;
   std::string message = "Server received shutdown signal";
-  _response.code = ScoreHiveResponseCode::OK;
-  _response.length = message.size();
-  _response.data = message;
+  response.code = ScoreHiveResponseCode::OK;
+  response.length = message.size();
+  response.data = message;
   spdlog::info(message);
   auto& coordinator = MPICoordinator::instance();
   coordinator.send_shutdown_signal(_mpi_size);
+
+  // Stop the server
+  boost::asio::post(_io_context, [this]() { stop(); });
 }
 
-void Server::_handle_bad_request() {
-  _response.code = ScoreHiveResponseCode::ERROR;
-  _response.length = 0;
-  _response.data = "Bad Request";
+void Server::_handle_bad_request(
+    [[maybe_unused]] const ScoreHiveRequest& request,
+    ScoreHiveResponse& response) {
+  response.code = ScoreHiveResponseCode::ERROR;
+  response.length = 0;
+  response.data = "Bad Request";
 }
 
-std::string Server::_parse_response() {
-  std::string response = "SH";
-  response += " ";
-  response += std::to_string(static_cast<u8>(_response.code));
-  response += " ";
-  response += std::to_string(_response.length);
-  response += " ";
-  response += _response.data;
-  response += "$\r\n";
-  return response;
+std::string Server::_parse_response(const ScoreHiveResponse& response) {
+  std::string response_str = "SH";
+  response_str += " ";
+  response_str += std::to_string(static_cast<u8>(response.code));
+  response_str += " ";
+  response_str += std::to_string(response.length);
+  response_str += " ";
+  response_str += response.data;
+  response_str += "$\r\n";
+  return response_str;
+}
+
+void Server::_send_response(
+    std::shared_ptr<boost::asio::ip::tcp::socket> socket,
+    const ScoreHiveResponse& response) {
+  auto response_str = std::make_shared<std::string>(_parse_response(response));
+
+  boost::asio::async_write(
+      *socket, boost::asio::buffer(*response_str),
+      [socket, response_str](const boost::system::error_code& error,
+                             std::size_t bytes_transferred) {
+        if (error) {
+          spdlog::error("Write error: {}", error.message());
+        } else {
+          spdlog::debug("Response sent successfully ({} bytes)",
+                        bytes_transferred);
+        }
+        // Socket will be closed automatically when shared_ptr goes out of scope
+      });
 }

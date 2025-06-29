@@ -1,10 +1,12 @@
 #include <mpi.h>
+#include <boost/asio.hpp>
 #include <domain/coordinator.hpp>
 #include <domain/evaluator.hpp>
 #include <iostream>
 #include <server/server.hpp>
 #include <system/aliases.hpp>
 #include <system/logger.hpp>
+#include <thread>
 
 i32 main(i32 argc, char** argv) {
   MPI_Init(&argc, &argv);
@@ -13,9 +15,27 @@ i32 main(i32 argc, char** argv) {
   MPI_Comm_size(MPI_COMM_WORLD, &size);
   Logger::config(rank);
   if (rank == 0) {
+    boost::asio::io_context io_context;
     ServerConfig config;
-    Server server(config);
+    Server server(io_context, config);
+    
+    // Start the server asynchronously
     server.start();
+    
+    // Run the io_context in a separate thread to handle async operations
+    std::thread io_thread([&io_context]() {
+      try {
+        io_context.run();
+      } catch (const std::exception& e) {
+        spdlog::error("IO context error: {}", e.what());
+      }
+    });
+    
+    spdlog::info("Master process started, server running on background thread");
+    
+    // Wait for the io_context to finish
+    io_thread.join();
+    
     MPICoordinator::instance().free_types();
   } else {
     spdlog::info("Worker {} started", rank);

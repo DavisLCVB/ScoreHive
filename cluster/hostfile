@@ -4,8 +4,7 @@
 # Master node (rank 0)
 mpi-master slots=1
 
-# Worker nodes (rank 1-4)
-mpi-worker1 slots=4
-mpi-worker2 slots=4
-mpi-worker3 slots=4
-mpi-worker4 slots=4
+# Worker nodes (rank 1-3)
+mpi-worker1 slots=1
+mpi-worker2 slots=1
+mpi-worker3 slots=1

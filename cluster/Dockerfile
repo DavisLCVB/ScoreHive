@@ -1,55 +1,21 @@
-FROM ubuntu:22.04
-
-# Evitar prompts interactivos
-ENV DEBIAN_FRONTEND=noninteractive
+FROM archlinux/archlinux:latest
 
 # Instalar dependencias del sistema y librerías
-RUN apt-get update && apt-get install -y \
-    build-essential \
-    cmake \
-    git \
-    wget \
-    pkg-config \
-    gcc-12 \
-    g++-12 \
-    openmpi-bin \
-    openmpi-common \
-    libopenmpi-dev \
-    openssh-server \
-    openssh-client \
-    net-tools \
-    iputils-ping \
-    vim \
-    && rm -rf /var/lib/apt/lists/*
-
-# Configurar GCC 12 como compilador por defecto
-RUN update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-12 100 && \
-    update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-12 100 && \
-    update-alternatives --install /usr/bin/cc cc /usr/bin/gcc 100 && \
-    update-alternatives --install /usr/bin/c++ c++ /usr/bin/g++ 100
+RUN pacman -Syu --noconfirm     base-devel     cmake     git     wget     pkgconf     gcc     openmpi     boost     libpqxx     openssh     net-tools     iputils     vim     && pacman -Scc --noconfirm
 
 # Instalar spdlog
 RUN cd /tmp && \
     git clone https://github.com/gabime/spdlog.git && \
     cd spdlog && \
     mkdir build && cd build && \
-    cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_STANDARD=20 -DCMAKE_CXX_COMPILER=g++-12 && \
+    cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_STANDARD=23 -DCMAKE_CXX_COMPILER=g++ && \
     make -j$(nproc) && \
     make install && \
     cd / && rm -rf /tmp/spdlog
 
 # Instalar nlohmann_json
-RUN cd /tmp && \
-    git clone https://github.com/nlohmann/json.git && \
-    cd json && \
-    mkdir build && cd build && \
-    cmake .. -DCMAKE_BUILD_TYPE=Release -DJSON_BuildTests=OFF -DCMAKE_CXX_STANDARD=20 -DCMAKE_CXX_COMPILER=g++-12 && \
-    make -j$(nproc) && \
-    make install && \
-    cd / && rm -rf /tmp/json
+RUN cd /tmp &&     git clone https://github.com/nlohmann/json.git &&     cd json &&     mkdir build && cd build &&     cmake .. -DCMAKE_BUILD_TYPE=Release -DJSON_BuildTests=OFF -DCMAKE_CXX_STANDARD=23 -DCMAKE_CXX_COMPILER=g++ &&     make -j$(nproc) &&     make install &&     cd / && rm -rf /tmp/json
 
-# Actualizar cache de librerías
-RUN ldconfig
 
 # Configurar SSH para comunicación MPI interna
 RUN mkdir /var/run/sshd
@@ -74,27 +40,11 @@ WORKDIR /app
 # Copiar código fuente
 COPY . /app/
 
-# Compilar aplicación (Debug por defecto) - Usar C++20
-RUN mkdir -p build/debug && \
-    cd build/debug && \
-    cmake ../.. -DCMAKE_BUILD_TYPE=Debug \
-                -DCMAKE_CXX_COMPILER=g++-12 \
-                -DCMAKE_C_COMPILER=gcc-12 \
-                -DCMAKE_CXX_STANDARD=20 \
-                -DCMAKE_CXX_STANDARD_REQUIRED=ON \
-                -DCMAKE_CXX_FLAGS="-std=c++20" && \
-    make -j$(nproc)
+# Compilar aplicación (Debug por defecto) - Usar C++20 (compatible con Boost 1.74)
+RUN mkdir -p build/debug &&     cd build/debug &&     cmake ../.. -DCMAKE_BUILD_TYPE=Debug                 -DCMAKE_CXX_COMPILER=g++                 -DCMAKE_C_COMPILER=gcc                 -DCMAKE_CXX_STANDARD=23                 -DCMAKE_CXX_STANDARD_REQUIRED=ON                 -DCMAKE_CXX_FLAGS="-std=c++23" &&     make -j$(nproc)
 
-# Compilar versión Release también - Usar C++20
-RUN mkdir -p build/release && \
-    cd build/release && \
-    cmake ../.. -DCMAKE_BUILD_TYPE=Release \
-                -DCMAKE_CXX_COMPILER=g++-12 \
-                -DCMAKE_C_COMPILER=gcc-12 \
-                -DCMAKE_CXX_STANDARD=20 \
-                -DCMAKE_CXX_STANDARD_REQUIRED=ON \
-                -DCMAKE_CXX_FLAGS="-std=c++20" && \
-    make -j$(nproc)
+# Compilar versión Release también - Usar C++20 (compatible con Boost 1.74)
+RUN mkdir -p build/release &&     cd build/release &&     cmake ../.. -DCMAKE_BUILD_TYPE=Release                 -DCMAKE_CXX_COMPILER=g++                 -DCMAKE_C_COMPILER=gcc                 -DCMAKE_CXX_STANDARD=23                 -DCMAKE_CXX_STANDARD_REQUIRED=ON                 -DCMAKE_CXX_FLAGS="-std=c++23" &&     make -j$(nproc)
 
 # Configurar variables de entorno para MPI
 ENV OMPI_ALLOW_RUN_AS_ROOT=1
@@ -106,9 +56,9 @@ RUN echo '#!/bin/bash\n\
 if [ "$(hostname)" = "mpi-master" ]; then\n\
     sleep 10\n\
     if [ "$DEBUG" = "1" ]; then\n\
-        env DEBUG=1 mpirun  --allow-run-as-root --hostfile /app/hostfile  -n 6 /app/build/debug/ScoreHiveCluster\n\
+        env DEBUG=1 mpirun  --allow-run-as-root --hostfile /app/hostfile  -n 4 /app/build/debug/ScoreHiveCluster\n\
     else\n\
-        mpirun  --allow-run-as-root --hostfile /app/hostfile -n 6 /app/build/release/ScoreHiveCluster\n\
+        mpirun  --allow-run-as-root --hostfile /app/hostfile -n 4 /app/build/release/ScoreHiveCluster\n\
     fi\n\
 else\n\
     tail -f /dev/null\n\

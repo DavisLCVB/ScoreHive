@@ -1,4 +1,19 @@
 services:
+  postgres:
+    image: postgres:16
+    container_name: scorehive-postgres
+    hostname: scorehive-postgres
+    networks:
+      - scorehive-net
+    environment:
+      POSTGRES_DB: scorehive_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: mysecretpassword
+    volumes:
+      - ./database/scheme.sql:/docker-entrypoint-initdb.d/10-scheme.sql
+      - ./database/functions.sql:/docker-entrypoint-initdb.d/20-functions.sql
+      - postgres_data:/var/lib/postgresql/data
+
   mpi-master:
     image: scorehive-mpi:latest
     container_name: scorehive-master
@@ -11,11 +26,16 @@ services:
       - ./hostfile:/app/hostfile:ro
     environment:
       - DEBUG=1
+      - PGDATABASE=scorehive_db
+      - PGUSER=postgres
+      - PGPASSWORD=mysecretpassword
+      - PGHOST=scorehive-postgres
+      - PGPORT=5432
     depends_on:
+      - postgres
       - mpi-worker1
       - mpi-worker2
       - mpi-worker3
-      - mpi-worker4
 
   mpi-worker1:
     image: scorehive-mpi:latest
@@ -25,6 +45,13 @@ services:
       - scorehive-net
     environment:
       - DEBUG=1
+      - PGDATABASE=scorehive_db
+      - PGUSER=postgres
+      - PGPASSWORD=mysecretpassword
+      - PGHOST=scorehive-postgres
+      - PGPORT=5432
+    depends_on:
+      - postgres
 
   mpi-worker2:
     image: scorehive-mpi:latest
@@ -34,6 +61,13 @@ services:
       - scorehive-net
     environment:
       - DEBUG=1
+      - PGDATABASE=scorehive_db
+      - PGUSER=postgres
+      - PGPASSWORD=mysecretpassword
+      - PGHOST=scorehive-postgres
+      - PGPORT=5432
+    depends_on:
+      - postgres
 
   mpi-worker3:
     image: scorehive-mpi:latest
@@ -43,16 +77,17 @@ services:
       - scorehive-net
     environment:
       - DEBUG=1
-
-  mpi-worker4:
-    image: scorehive-mpi:latest
-    container_name: scorehive-worker4
-    hostname: mpi-worker4
-    networks:
-      - scorehive-net
-    environment:
-      - DEBUG=1
+      - PGDATABASE=scorehive_db
+      - PGUSER=postgres
+      - PGPASSWORD=mysecretpassword
+      - PGHOST=scorehive-postgres
+      - PGPORT=5432
+    depends_on:
+      - postgres
 
 networks:
   scorehive-net:
     driver: bridge
+
+volumes:
+  postgres_data:

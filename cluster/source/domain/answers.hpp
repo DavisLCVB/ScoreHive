@@ -19,9 +19,10 @@ struct Answer {
 };
 
 struct ExamAnswers {
-  i32 stage;
+  std::string process;  // Process UUID
+  std::string area;     // Area UUID
   std::vector<Answer> answers;
-  NLOHMANN_DEFINE_TYPE_INTRUSIVE(ExamAnswers, stage, answers)
+  NLOHMANN_DEFINE_TYPE_INTRUSIVE(ExamAnswers, process, area, answers)
 };
 
 class AnswersManager {
@@ -29,16 +30,16 @@ class AnswersManager {
   static AnswersManager& instance();
   ~AnswersManager() = default;
   void load_from_json(const json& answers_json);
-  std::string serialize_for_mpi(const std::vector<i32>& required_stages) const;
+  std::string serialize_for_mpi(const std::vector<std::string>& required_processes) const;
   void deserialize_from_mpi(const std::string& serialized_data);
-  std::map<i32, i32> get_answers(i32 stage);
+  std::map<i32, i32> get_answers(const std::string& process);
   std::string save_to_json() const;
 
  private:
   AnswersManager() = default;
   static std::unique_ptr<AnswersManager> _instance;
-  std::map<i32, ExamAnswers> _answers;
-  std::map<i32, std::map<i32, i32>> _cache_answers;
+  std::map<std::string, ExamAnswers> _answers;  // keyed by process UUID
+  std::map<std::string, std::map<i32, i32>> _cache_answers; // keyed by process UUID
 };
 
 #endif  // ANSWERS_HPP

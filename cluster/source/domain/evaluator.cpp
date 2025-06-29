@@ -1,6 +1,7 @@
 #include "evaluator.hpp"
 
 #include <domain/answers.hpp>
+#include <database/database.hpp>
 
 std::unique_ptr<Evaluator> Evaluator::_instance = nullptr;
 
@@ -27,10 +28,11 @@ std::vector<MPIResult> Evaluator::evaluate_exam_batch(
 
 MPIResult Evaluator::_evaluate_exam(const MPIExam& exam) {
   auto student_answers = exam.answers;
-  auto correct_answers = AnswersManager::instance().get_answers(exam.stage);
+  auto correct_answers = AnswersManager::instance().get_answers(exam.process);
   if (correct_answers.empty()) {
-    return MPIResult{exam.stage,
-                     exam.id_exam,
+    return MPIResult{exam.id_exam,
+                     exam.process,
+                     exam.area,
                      0,
                      0,
                      static_cast<i32>(student_answers.size()),
@@ -55,6 +57,6 @@ MPIResult Evaluator::_evaluate_exam(const MPIExam& exam) {
                  wrong_answers_count * _scores.wrong_answer +
                  unscored_answers_count * _scores.unscored_answer;
   return MPIResult{
-      exam.stage,          exam.id_exam,           correct_answers_count,
-      wrong_answers_count, unscored_answers_count, score};
+      exam.id_exam,           exam.process,           exam.area,
+      correct_answers_count, wrong_answers_count, unscored_answers_count, score};
 }

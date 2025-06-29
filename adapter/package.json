@@ -1,9 +1,13 @@
 {
   "name": "adapter",
   "version": "1.0.0",
-  "main": "adapter.js",
+  "main": "dist/server.js",
   "scripts": {
-    "start": "node adapter.js",
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "dev": "npm run build && npm start",
+    "watch": "tsc --watch",
+    "clean": "rm -rf dist",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "author": "bayes",
@@ -17,11 +21,18 @@
     "bridge"
   ],
   "dependencies": {
+    "@supabase/supabase-js": "^2.50.2",
     "axios": "^1.9.0",
     "cors": "^2.8.5",
-    "express": "^5.1.0"
+    "dotenv": "^17.0.0",
+    "express": "^5.1.0",
+    "morgan": "^1.10.0"
   },
   "devDependencies": {
-    "nodemon": "^3.1.10"
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.3",
+    "@types/morgan": "^1.9.10",
+    "nodemon": "^3.1.10",
+    "typescript": "^5.8.3"
   }
 }
