@@ -20,6 +20,7 @@ RUN apt-get update && apt-get install -y \
     net-tools \
     iputils-ping \
     vim \
+    dos2unix \
     && rm -rf /var/lib/apt/lists/*
 
 # Configurar GCC 12 como compilador por defecto
@@ -73,6 +74,9 @@ WORKDIR /app
 
 # Copiar código fuente
 COPY . /app/
+
+COPY hostfile /app/hostfile.tmp
+RUN dos2unix /app/hostfile.tmp && mv /app/hostfile.tmp /app/hostfile
 
 # Compilar aplicación (Debug por defecto) - Usar C++20
 RUN mkdir -p build/debug && \
