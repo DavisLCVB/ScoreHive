@@ -66,6 +66,212 @@ class SHProtocolAdapter {
     this.setupRoutes();
   }
 
+  /**
+   * Convierte respuesta del cluster al formato esperado por el frontend
+   * Cluster: [{ stage: 1, answers: [{ qst_idx: 1, rans_idx: 1 }] }]
+   * Frontend: { "EXAM_001": ["A", "B", "C", "D"] }
+   */
+  convertClusterAnswersToFrontendFormat(clusterData) {
+    const answerKeys = {};
+    
+    if (!Array.isArray(clusterData)) {
+      console.warn('Datos del cluster no son un array:', clusterData);
+      return answerKeys;
+    }
+    
+    clusterData.forEach((examAnswers) => {
+      if (!examAnswers.stage || !Array.isArray(examAnswers.answers)) {
+        console.warn('Formato de examen inválido:', examAnswers);
+        return;
+      }
+      
+      // Generar exam_id basado en el stage
+      const examId = `EXAM_STAGE_${examAnswers.stage.toString().padStart(3, '0')}`;
+      
+      // Convertir respuestas de números a letras (1=A, 2=B, 3=C, 4=D, etc.)
+      const answers = examAnswers.answers
+        .sort((a, b) => a.qst_idx - b.qst_idx) // Ordenar por índice de pregunta
+        .map((answer) => {
+          // Convertir índice de respuesta a letra (1=A, 2=B, etc.)
+          if (answer.rans_idx >= 1 && answer.rans_idx <= 26) {
+            return String.fromCharCode('A'.charCodeAt(0) + answer.rans_idx - 1);
+          }
+          return 'A'; // Por defecto A si el índice está fuera de rango
+        });
+      
+      answerKeys[examId] = answers;
+    });
+    
+    return answerKeys;
+  }
+
+  /**
+   * Convierte claves de respuesta del formato del adapter al formato del cluster
+   * Adapter: { "E001": ["A", "B", "C", "D"], "E002": ["B", "A", "D", "C"] }
+   * Cluster: [{ stage: 1, answers: [{ qst_idx: 1, rans_idx: 1 }] }]
+   */
+  convertAnswerKeysToClusterFormat(answerKeys) {
+    // El cluster solo puede almacenar UNA ficha de respuestas a la vez
+    // Tomamos la primera clave de respuesta disponible
+    const examIds = Object.keys(answerKeys);
+    if (examIds.length === 0) {
+      throw new Error('No se proporcionaron claves de respuesta');
+    }
+    
+    // Usar solo la primera clave de respuesta
+    const firstExamId = examIds[0];
+    const answers = answerKeys[firstExamId];
+    
+    if (examIds.length > 1) {
+      console.warn(`⚠️ El cluster solo puede almacenar una ficha a la vez. Usando: ${firstExamId}, ignorando ${examIds.length - 1} adicionales`);
+    }
+    
+    // Convertir respuestas de letras a índices
+    const convertedAnswers = answers.map((answer, questionIndex) => {
+      const upperAnswer = answer.toUpperCase().trim();
+      let answerIndex;
+      
+      if (upperAnswer >= 'A' && upperAnswer <= 'Z') {
+        answerIndex = upperAnswer.charCodeAt(0) - 'A'.charCodeAt(0) + 1;
+      } else {
+        const numAnswer = parseInt(upperAnswer);
+        answerIndex = isNaN(numAnswer) ? 1 : numAnswer;
+      }
+      
+      return {
+        qst_idx: questionIndex + 1,  // Índice de pregunta (1-based)
+        rans_idx: answerIndex        // Índice de respuesta correcta (A=1, B=2, etc.)
+      };
+    });
+    
+    // Retornar array con UN solo elemento (stage 1)
+    return [{
+      stage: 1,
+      answers: convertedAnswers
+    }];
+  }
+
+  /**
+   * Convierte el formato del frontend al formato esperado por el cluster
+   * Frontend: { student_id, exam_id, answers: ["A", "B", "C", "D"] }
+   * Cluster: { stage, id_exam, answers: [{ qst_idx, ans_idx }] }
+   */
+  convertToClusterFormat(frontendExams) {
+    if (!Array.isArray(frontendExams)) {
+      throw new Error('Los exámenes deben ser un array');
+    }
+
+    return frontendExams.map((exam, examIndex) => {
+      // Validar estructura del examen
+      if (!exam.student_id || !exam.exam_id || !Array.isArray(exam.answers)) {
+        throw new Error(`Examen ${examIndex + 1}: Faltan campos requeridos (student_id, exam_id, answers)`);
+      }
+
+      // Convertir exam_id string a número entero
+      let numericExamId;
+      if (typeof exam.exam_id === 'string') {
+        // Extraer número del string (ej: "EXAM_MAT_001" -> 1001)
+        const match = exam.exam_id.match(/(\d+)/);
+        numericExamId = match ? parseInt(match[0]) : 1000 + examIndex;
+      } else {
+        numericExamId = parseInt(exam.exam_id) || 1000 + examIndex;
+      }
+
+      // Convertir respuestas de strings a formato MPI
+      const convertedAnswers = exam.answers.map((answer, questionIndex) => {
+        if (typeof answer !== 'string') {
+          throw new Error(`Examen ${examIndex + 1}, Pregunta ${questionIndex + 1}: La respuesta debe ser un string`);
+        }
+
+        // Convertir letra a índice (A=1, B=2, C=3, D=4, etc.)
+        const upperAnswer = answer.toUpperCase().trim();
+        let answerIndex;
+        
+        if (upperAnswer >= 'A' && upperAnswer <= 'Z') {
+          answerIndex = upperAnswer.charCodeAt(0) - 'A'.charCodeAt(0) + 1;
+        } else {
+          // Si no es una letra, intentar convertir como número
+          const numAnswer = parseInt(upperAnswer);
+          answerIndex = isNaN(numAnswer) ? 1 : numAnswer;
+        }
+
+        return {
+          qst_idx: questionIndex + 1,  // Índice de pregunta (1-based)
+          ans_idx: answerIndex         // Índice de respuesta (A=1, B=2, etc.)
+        };
+      });
+
+      // Validar que no haya valores null o undefined
+      if (!numericExamId || numericExamId === null || numericExamId === undefined) {
+        throw new Error(`Examen ${examIndex + 1}: ID de examen inválido: ${numericExamId}`);
+      }
+
+      // Estructura final para el cluster (sin metadatos que puedan causar confusión)
+      return {
+        stage: 1,                    // Stage por defecto
+        id_exam: numericExamId,      // ID numérico del examen
+        answers: convertedAnswers    // Array de objetos { qst_idx, ans_idx }
+      };
+    });
+  }
+
+  /**
+   * Convierte resultados MPI al formato esperado por el frontend
+   * MPI: [{ stage, id_exam, correct_answers, wrong_answers, unscored_answers, score }]
+   * Frontend: [{ student_id, score, correct_answers, wrong_answers, unscored_answers, total_questions, percentage }]
+   */
+  convertMPIResultsToFrontendFormat(mpiResults, originalExams) {
+    if (!Array.isArray(mpiResults) || !Array.isArray(originalExams)) {
+      console.warn('Resultados MPI o exámenes originales no son arrays válidos');
+      return [];
+    }
+
+    // Crear un mapa de id_exam a información del examen original
+    // Usar la misma lógica que en convertToClusterFormat
+    const examMap = new Map();
+    originalExams.forEach((exam, examIndex) => {
+      let numericExamId;
+      if (typeof exam.exam_id === 'string') {
+        // Extraer número del string (ej: "EXAM_MAT_001" -> 1)
+        const match = exam.exam_id.match(/(\d+)/);
+        numericExamId = match ? parseInt(match[0]) : 1000 + examIndex;
+      } else {
+        numericExamId = parseInt(exam.exam_id) || 1000 + examIndex;
+      }
+      
+      examMap.set(numericExamId, {
+        student_id: exam.student_id,
+        exam_id: exam.exam_id,
+        total_questions: exam.answers.length
+      });
+    });
+
+    // Convertir cada resultado MPI al formato del frontend
+    return mpiResults.map((mpiResult, index) => {
+      const examInfo = examMap.get(mpiResult.id_exam) || {
+        student_id: `EST${(index + 1).toString().padStart(3, '0')}`,
+        exam_id: `EXAM_${mpiResult.id_exam}`,
+        total_questions: mpiResult.correct_answers + mpiResult.wrong_answers + mpiResult.unscored_answers
+      };
+
+      const totalQuestions = examInfo.total_questions || 
+        (mpiResult.correct_answers + mpiResult.wrong_answers + mpiResult.unscored_answers);
+      
+      const percentage = totalQuestions > 0 ? 
+        (mpiResult.correct_answers / totalQuestions) * 100 : 0;
+
+      return {
+        student_id: examInfo.student_id,
+        score: mpiResult.score,
+        correct_answers: mpiResult.correct_answers,
+        wrong_answers: mpiResult.wrong_answers,
+        unscored_answers: mpiResult.unscored_answers,
+        total_questions: totalQuestions,
+        percentage: parseFloat(percentage.toFixed(2))
+      };
+    });
+  }
+
   setupMiddleware() {
     this.app.use(express.json());
     this.app.use(express.text({ type: 'text/plain' }));
@@ -84,10 +290,24 @@ class SHProtocolAdapter {
         const { host, port } = req.params;
         const response = await this.sendSHCommand(host, parseInt(port), SH_COMMANDS.GET_ANSWERS);
         
+        // Convertir la respuesta del cluster al formato esperado por el frontend
+        let answerKeys = {};
+        try {
+          if (response.data && typeof response.data === 'string') {
+            const clusterData = JSON.parse(response.data);
+            answerKeys = this.convertClusterAnswersToFrontendFormat(clusterData);
+          }
+        } catch (parseError) {
+          console.warn('Error parseando respuesta del cluster:', parseError.message);
+          console.log('Respuesta raw:', response.data);
+        }
+        
         res.json({
           success: true,
           command: 'GET_ANSWERS',
-          response: response,
+          answer_keys: answerKeys,
+          server_response: response.command_name || 'OK',
+          raw_response: response,
           timestamp: new Date().toISOString()
         });
       } catch (error) {
@@ -99,16 +319,28 @@ class SHProtocolAdapter {
     this.app.post('/answers/:host/:port', async (req, res) => {
       try {
         const { host, port } = req.params;
-        const { answers } = req.body;
+        const { answer_keys, answers } = req.body;
         
-        if (!answers) {
+        // Soportar tanto answer_keys (frontend) como answers (directo)
+        const answerData = answer_keys || answers;
+        
+        if (!answerData) {
           return res.status(400).json({
             success: false,
-            error: 'Se requiere el campo "answers" en el body'
+            error: 'Se requiere el campo "answer_keys" o "answers" en el body',
+            expected_format: {
+              answer_keys: {
+                "EXAM_001": ["A", "B", "C", "D"],
+                "EXAM_002": ["B", "A", "D", "C"]
+              }
+            }
           });
         }
 
-        const data = typeof answers === 'string' ? answers : JSON.stringify(answers);
+        // Convertir formato del adapter al formato del cluster
+        const clusterFormat = this.convertAnswerKeysToClusterFormat(answerData);
+        const data = JSON.stringify(clusterFormat);
+        console.log(`Enviando SET_ANSWERS a ${host}:${port}:`, data);
         const response = await this.sendSHCommand(host, parseInt(port), SH_COMMANDS.SET_ANSWERS, data);
         
         res.json({
@@ -146,7 +378,11 @@ class SHProtocolAdapter {
 
         console.log(`Procesando ${exams.length} exámenes para evaluación`);
         
-        const examData = JSON.stringify(exams);
+        // Convertir formato del frontend al formato del cluster
+        const convertedExams = this.convertToClusterFormat(exams);
+        console.log(`Exámenes convertidos al formato MPI:`, JSON.stringify(convertedExams, null, 2));
+        
+        const examData = JSON.stringify(convertedExams);
         const response = await this.sendSHCommand(host, parseInt(port), SH_COMMANDS.REVIEW, examData);
         
         // Parsear la respuesta si es JSON
@@ -201,24 +437,35 @@ class SHProtocolAdapter {
 
         console.log(`📝 Evaluando ${exams.length} exámenes en ${host}:${port}`);
         
-        const examData = JSON.stringify(exams);
+        // Convertir formato del frontend al formato del cluster
+        const convertedExams = this.convertToClusterFormat(exams);
+        console.log(`🔄 Conversión completada: ${exams.length} exámenes → formato MPI`);
+        
+        const examData = JSON.stringify(convertedExams);
         const response = await this.sendSHCommand(host, parseInt(port), SH_COMMANDS.REVIEW, examData);
         
-        // Parsear resultados
-        let results = response.data;
+        // Parsear resultados MPI
+        let mpiResults = response.data;
         try {
           if (typeof response.data === 'string') {
-            results = JSON.parse(response.data);
+            mpiResults = JSON.parse(response.data);
           }
         } catch (e) {
           console.warn('⚠️ Respuesta no es JSON, devolviendo como texto');
+          mpiResults = [];
         }
         
-        // Respuesta simplificada para Next.js
+        // Convertir resultados MPI al formato esperado por el frontend
+        const processedResults = this.convertMPIResultsToFrontendFormat(mpiResults, exams);
+        
+        // Respuesta estructurada para Next.js
         res.json({
           success: true,
           exams_count: exams.length,
-          results: results,
+          results: {
+            mpi_results: mpiResults,
+            scores: processedResults
+          },
           processing_time: new Date().toISOString(),
           server_response: response.command_name === 'UNKNOWN' ? 'SUCCESS' : response.command_name
         });

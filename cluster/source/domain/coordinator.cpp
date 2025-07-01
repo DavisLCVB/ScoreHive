@@ -216,28 +216,71 @@ std::vector<std::vector<MPIExam>> MPICoordinator::_slice_exams(
     const json& exams, i32 mpi_size) {
   try {
     i32 workers_size = mpi_size - 1;  // 0 is master
-    i32 exams_per_worker =
-        std::ceil(static_cast<double>(exams.size()) / workers_size);
-    std::vector<std::vector<MPIExam>> exams_slices(workers_size);
+    i32 total_exams = static_cast<i32>(exams.size());
+    
+    // Si no hay exámenes, devolver vector vacío
+    if (total_exams == 0) {
+      spdlog::warn("No exams to slice");
+      return std::vector<std::vector<MPIExam>>();
+    }
+    
+    // Usar solo los workers necesarios (min entre workers disponibles y exámenes)
+    i32 active_workers = std::min(workers_size, total_exams);
+    i32 exams_per_worker = std::ceil(static_cast<double>(total_exams) / active_workers);
+    
+    // Solo crear slices para workers activos
+    std::vector<std::vector<MPIExam>> exams_slices(active_workers);
+    
+    spdlog::info("Distributing {} exams among {} active workers ({} exams per worker)", 
+                 total_exams, active_workers, exams_per_worker);
 
     i32 start_idx = 0;
     i32 end_idx = 0;
-    for (i32 i = 0; i < workers_size; i++) {
+    for (i32 i = 0; i < active_workers; i++) {
       start_idx = i * exams_per_worker;
-      end_idx =
-          (i == workers_size - 1) ? exams.size() : start_idx + exams_per_worker;
+      end_idx = std::min(start_idx + exams_per_worker, total_exams);
       auto slice_size = end_idx - start_idx;
+      
+      // Solo procesar si hay exámenes para este worker
+      if (slice_size <= 0) {
+        spdlog::warn("Worker {} has no exams to process", i + 1);
+        continue;
+      }
       exams_slices[i].resize(slice_size);
-      for (i32 j = start_idx; j < end_idx; j++) {
+      for (i32 j = start_idx; j < end_idx && j < static_cast<i32>(exams.size()); j++) {
+        if (j >= static_cast<i32>(exams.size())) {
+          spdlog::error("Exam index {} out of bounds (size: {})", j, exams.size());
+          break;
+        }
+        
         json exam = exams[j];
         auto& slice = exams_slices[i];
         MPIExam& mpi_exam = slice[j - start_idx];
+        
+        // Validar que el examen tenga los campos requeridos
+        if (!exam.contains("stage") || !exam.contains("id_exam") || !exam.contains("answers")) {
+          spdlog::error("Exam {} missing required fields", j);
+          throw std::runtime_error("Invalid exam format");
+        }
+        
         mpi_exam.stage = exam["stage"];
         mpi_exam.id_exam = exam["id_exam"];
+        
+        // Validar que answers sea un array
+        if (!exam["answers"].is_array()) {
+          spdlog::error("Exam {} answers field is not an array", j);
+          throw std::runtime_error("Answers must be an array");
+        }
+        
         mpi_exam.answers.resize(exam["answers"].size());
         for (size_t k = 0; k < exam["answers"].size(); k++) {
-          mpi_exam.answers[k].qst_idx = exam["answers"][k]["qst_idx"];
-          mpi_exam.answers[k].ans_idx = exam["answers"][k]["ans_idx"];
+          auto& answer = exam["answers"][k];
+          if (!answer.contains("qst_idx") || !answer.contains("ans_idx")) {
+            spdlog::error("Answer {} in exam {} missing required fields", k, j);
+            throw std::runtime_error("Invalid answer format");
+          }
+          mpi_exam.answers[k].qst_idx = answer["qst_idx"];
+          mpi_exam.answers[k].ans_idx = answer["ans_idx"];
         }
       }
     }
@@ -251,9 +294,28 @@ std::vector<std::vector<MPIExam>> MPICoordinator::_slice_exams(
 void MPICoordinator::send_to_workers(const json& exams_to_review,
                                      i32 mpi_size) {
   auto exams_slices = _slice_exams(exams_to_review, mpi_size);
-  auto size = exams_slices.size();
-  for (size_t i = 0; i < size; i++) {
+  auto active_workers = exams_slices.size();
+  
+  // Limpiar la lista de workers activos
+  _active_workers.clear();
+  
+  if (active_workers == 0) {
+    spdlog::warn("No workers to send exams to");
+    return;
+  }
+  
+  spdlog::info("Sending work to {} active workers out of {} available", 
+               active_workers, mpi_size - 1);
+  
+  for (size_t i = 0; i < active_workers; i++) {
     auto exam_slice = exams_slices[i];
+    
+    // Validar que el slice no esté vacío
+    if (exam_slice.empty()) {
+      spdlog::warn("Worker {} received empty exam slice, skipping", i + 1);
+      continue;
+    }
+    
     auto required_stages = std::vector<i32>(exam_slice.size());
     std::transform(exam_slice.begin(), exam_slice.end(),
                    required_stages.begin(),
@@ -261,6 +323,12 @@ void MPICoordinator::send_to_workers(const json& exams_to_review,
     auto answer_keys_serialized =
         AnswersManager::instance().serialize_for_mpi(required_stages);
     auto worker_rank = i + 1;  // 0 is master
+    
+    spdlog::info("Sending {} exams to worker {}", exam_slice.size(), worker_rank);
+    
+    // Registrar este worker como activo
+    _active_workers.push_back(worker_rank);
+    
     send_command(MPICommand::REVIEW, worker_rank, _config.mpi_tag_command);
     send_answers(answer_keys_serialized, worker_rank, _config.mpi_tag_answers);
     send_exam_batch(exam_slice, worker_rank, _config.mpi_tag_exams);
@@ -274,13 +342,24 @@ void MPICoordinator::send_shutdown_signal(i32 mpi_size) {
   }
 }
 
-json MPICoordinator::receive_results_from_workers(i32 mpi_size) {
+json MPICoordinator::receive_results_from_workers(i32 /* mpi_size */) {
   std::vector<MPIResult> results;
-  for (i32 i = 0; i < mpi_size - 1; i++) {
-    auto worker_rank = i + 1;  // 0 is master
+  
+  if (_active_workers.empty()) {
+    spdlog::warn("No active workers to receive results from");
+    return json(results);
+  }
+  
+  spdlog::info("Waiting for results from {} active workers", _active_workers.size());
+  
+  // Solo esperar resultados de workers activos
+  for (auto worker_rank : _active_workers) {
+    spdlog::info("Receiving results from worker {}", worker_rank);
     auto worker_results = receive_results(worker_rank, _config.mpi_tag_results);
     results.insert(results.end(), worker_results.begin(), worker_results.end());
   }
+  
+  spdlog::info("Received {} total results from all active workers", results.size());
   json results_json = results;
   return results_json;
 }

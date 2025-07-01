@@ -82,6 +82,7 @@ class MPICoordinator {
   MPI_Datatype _mpi_exam_header_type = MPI_DATATYPE_NULL;
   CoordinatorConfig _config;
   bool _types_created = false;
+  std::vector<i32> _active_workers;  // Rastrea qué workers recibieron trabajo
 
   std::vector<std::vector<MPIExam>> _slice_exams(const json& exams,
                                                  i32 mpi_size);

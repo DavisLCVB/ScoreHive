@@ -106,9 +106,9 @@ RUN echo '#!/bin/bash\n\
 if [ "$(hostname)" = "mpi-master" ]; then\n\
     sleep 10\n\
     if [ "$DEBUG" = "1" ]; then\n\
-        env DEBUG=1 mpirun  --allow-run-as-root --hostfile /app/hostfile  -n 6 /app/build/debug/ScoreHiveCluster\n\
+        env DEBUG=1 mpirun  --allow-run-as-root --hostfile /app/hostfile  -n 5 /app/build/debug/ScoreHiveCluster\n\
     else\n\
-        mpirun  --allow-run-as-root --hostfile /app/hostfile -n 6 /app/build/release/ScoreHiveCluster\n\
+        mpirun  --allow-run-as-root --hostfile /app/hostfile -n 5 /app/build/release/ScoreHiveCluster\n\
     fi\n\
 else\n\
     tail -f /dev/null\n\

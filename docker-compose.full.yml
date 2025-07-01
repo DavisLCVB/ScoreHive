@@ -1,0 +1,116 @@
+# Docker Compose completo para ScoreHive
+# Incluye todos los componentes: Frontend, Adapter y Cluster MPI
+version: '3.8'
+
+services:
+  # ==========================================
+  # FRONTEND - Next.js Web Application
+  # ==========================================
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: scorehive-frontend
+    hostname: frontend
+    networks:
+      - scorehive-net
+    ports:
+      - "3000:3000"  # Puerto de desarrollo de Next.js
+    environment:
+      - NODE_ENV=production
+      - NEXT_TELEMETRY_DISABLED=1
+    depends_on:
+      - adapter
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - /app/.next
+    restart: unless-stopped
+
+  # ==========================================
+  # ADAPTER - HTTP-to-TCP Protocol Bridge
+  # ==========================================
+  adapter:
+    build:
+      context: ./adapter
+      dockerfile: Dockerfile
+    container_name: scorehive-adapter
+    hostname: adapter
+    networks:
+      - scorehive-net
+    ports:
+      - "3001:3001"  # Puerto del adapter
+    environment:
+      - NODE_ENV=production
+      - DEBUG=1
+    depends_on:
+      - mpi-master
+    volumes:
+      - ./adapter:/app
+      - /app/node_modules
+    restart: unless-stopped
+
+  # ==========================================
+  # CLUSTER MPI - Master Node
+  # ==========================================
+  mpi-master:
+    build:
+      context: ./cluster
+      dockerfile: Dockerfile
+    image: scorehive-mpi:latest
+    container_name: scorehive-master
+    hostname: mpi-master
+    networks:
+      - scorehive-net
+    ports:
+      - "8080:8080"  # Puerto HTTP del cluster
+    volumes:
+      - ./cluster/hostfile:/app/hostfile:ro
+    environment:
+      - DEBUG=1
+      - MPI_PROCESSES=5  # 1 master + 4 workers (2 slots c/u)
+    depends_on:
+      - mpi-worker1
+      - mpi-worker2
+    restart: unless-stopped
+
+  # ==========================================
+  # CLUSTER MPI - Worker Nodes
+  # ==========================================
+  mpi-worker1:
+    image: scorehive-mpi:latest
+    container_name: scorehive-worker1
+    hostname: mpi-worker1
+    networks:
+      - scorehive-net
+    environment:
+      - DEBUG=1
+    restart: unless-stopped
+
+  mpi-worker2:
+    image: scorehive-mpi:latest
+    container_name: scorehive-worker2
+    hostname: mpi-worker2
+    networks:
+      - scorehive-net
+    environment:
+      - DEBUG=1
+    restart: unless-stopped
+
+# ==========================================
+# NETWORKING
+# ==========================================
+networks:
+  scorehive-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+
+# ==========================================
+# VOLUMES (Opcional)
+# ==========================================
+volumes:
+  node_modules_frontend:
+  node_modules_adapter:
+  mpi_logs:

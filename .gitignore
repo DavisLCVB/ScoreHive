@@ -1,3 +1,8 @@
 .vscode
 build
 Testing
+CLAUDE.md
+GEMINI.md
+.idea
+dist
+.env

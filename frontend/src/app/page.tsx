@@ -4,16 +4,18 @@ import axios from 'axios';
 
 const BASE_URL = 'http://localhost:3001'; // CAMBIAR A URL DEL ADAPTADOR
 
-interface MPIQuestion {
-  qst_idx: number;
-  ans_idx: number;
-}
+// Comentado porque el adapter maneja la conversión automáticamente  
+// interface MPIQuestion {
+//   qst_idx: number;
+//   ans_idx: number;
+// }
 
-interface MPIExam {
-  stage: number;
-  id_exam: number;
-  answers: MPIQuestion[];
-}
+// Comentado porque el adapter maneja la conversión automáticamente
+// interface MPIExam {
+//   stage: number;
+//   id_exam: number;
+//   answers: MPIQuestion[];
+// }
 
 interface MPIResult {
   stage: number;
@@ -52,6 +54,30 @@ interface GradeResponse {
   processing_time: string;
   server_response: string;
   error?: string;
+  statistical_analysis?: {
+    summary: {
+      total_students: number;
+      total_exams_processed: number;
+      pass_threshold: string;
+    };
+    performance_metrics: {
+      average_score: string;
+      average_percentage: string;
+      median_percentage: string;
+      highest_score: string;
+      lowest_score: string;
+    };
+    pass_fail_analysis: {
+      passed_students: number;
+      failed_students: number;
+      pass_rate: string;
+      fail_rate: string;
+    };
+    grade_distribution: {
+      [key: string]: number;
+    };
+  };
+  recommendations?: string[];
 }
 
 interface AnswerKeysResponse {
@@ -95,56 +121,79 @@ export default function Home() {
   const [examCount, setExamCount] = useState<number>(0);
   const [serverStatus, setServerStatus] = useState<string>("");
   const [activeTab, setActiveTab] = useState<'grade' | 'answers'>('grade');
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [lastResults, setLastResults] = useState<any>(null);
 
-  // Ejemplo de datos para mostrar el formato esperado - MÚLTIPLES EXÁMENES
-  const exampleExamData: ExamsPayload = {
-    exams: [
-      {
-        student_id: "EST001",
-        exam_id: "EXAM_MAT_001",
-        answers: ["A", "B", "C", "D", "A", "B", "C", "D", "A", "B"]
-      },
-      {
-        student_id: "EST002", 
-        exam_id: "EXAM_MAT_001",
-        answers: ["B", "A", "D", "C", "B", "A", "D", "C", "B", "A"]
-      },
-      {
-        student_id: "EST003", 
-        exam_id: "EXAM_MAT_002",
-        answers: ["C", "D", "A", "B", "C", "D", "A", "B", "C", "D"]
-      },
-      {
-        student_id: "EST004",
-        exam_id: "EXAM_FIS_001", 
-        answers: ["D", "C", "B", "A", "D", "C", "B", "A", "D", "C"]
-      },
-      {
-        student_id: "EST005",
-        exam_id: "EXAM_MAT_001",
-        answers: ["A", "A", "A", "A", "A", "B", "B", "B", "B", "B"]
-      },
-      {
-        student_id: "EST006",
-        exam_id: "EXAM_MAT_002", 
-        answers: ["C", "D", "A", "B", "C", "D", "A", "B", "C", "D"]
+  // Función para generar exámenes aleatorios (con mayor probabilidad de aprobar)
+  const generateRandomExams = (): ExamsPayload => {
+    // Usar solo un tipo de examen ya que el cluster solo puede almacenar una ficha
+    const examType = "EXAM_STAGE_001";
+    const numQuestions = 10; // Estándar para el cluster
+
+    const exams: Exam[] = [];
+
+    for (let i = 1; i <= 10; i++) {
+      // Generar respuestas con mayor probabilidad de ser correctas (70% de probabilidad)
+      const answers: string[] = [];
+      for (let j = 0; j < numQuestions; j++) {
+        let selectedAnswer: string;
+        if (Math.random() < 0.70) { // 70% probabilidad de respuesta correcta
+          selectedAnswer = "A"; // Asumimos que A es generalmente la respuesta correcta
+        } else {
+          // 30% probabilidad de respuesta incorrecta
+          const wrongAnswers = ["B", "C", "D"];
+          selectedAnswer = wrongAnswers[Math.floor(Math.random() * wrongAnswers.length)];
+        }
+        answers.push(selectedAnswer);
       }
-    ]
+
+      exams.push({
+        student_id: `EST${i.toString().padStart(3, '0')}`,
+        exam_id: examType,
+        answers: answers
+      });
+    }
+
+    return { exams };
   };
 
-  const exampleAnswerKeys: AnswerKeysPayload = {
-    answer_keys: {
-      "EXAM_MAT_001": ["A", "B", "C", "D", "A", "B", "C", "D", "A", "B"],
-      "EXAM_MAT_002": ["C", "D", "A", "B", "C", "D", "A", "B", "C", "D"],
-      "EXAM_FIS_001": ["B", "A", "C", "D", "B", "A", "C", "D", "B", "A"]
+  // Función para generar claves de respuesta aleatorias (compatible con cluster)
+  const generateRandomAnswerKeys = (): AnswerKeysPayload => {
+    const numQuestions = 10; // Estándar para el cluster
+    const examType = "EXAM_STAGE_001"; // Tipo compatible con el cluster
+
+    const answer_keys: { [key: string]: string[] } = {};
+    
+    // Generar clave de respuesta con patrón más realista
+    const answers: string[] = [];
+    for (let i = 0; i < numQuestions; i++) {
+      // Patrón más balanceado de respuestas correctas
+      const patterns = [
+        ["A", "B", "C", "D", "A", "B", "C", "D", "A", "B"], // Patrón secuencial
+        ["A", "A", "B", "C", "D", "A", "B", "C", "D", "A"], // Más As
+        ["B", "A", "C", "A", "D", "B", "A", "C", "A", "D"]  // Patrón mixto
+      ];
+      
+      const selectedPattern = patterns[Math.floor(Math.random() * patterns.length)];
+      answers.push(selectedPattern[i]);
     }
+    
+    answer_keys[examType] = answers;
+    
+    return { answer_keys };
   };
 
   const handleLoadExample = () => {
     if (activeTab === 'grade') {
-      setInputJson(JSON.stringify(exampleExamData, null, 2));
+      // Generar nuevos exámenes aleatorios cada vez
+      const randomExams = generateRandomExams();
+      setInputJson(JSON.stringify(randomExams, null, 2));
+      setServerStatus(`🎲 Generados 10 exámenes aleatorios (70% probabilidad de aprobar)`);
     } else {
-      setAnswerKeysJson(JSON.stringify(exampleAnswerKeys, null, 2));
+      // Generar nuevas claves aleatorias cada vez
+      const randomKeys = generateRandomAnswerKeys();
+      setAnswerKeysJson(JSON.stringify(randomKeys, null, 2));
+      setServerStatus(`🔑 Generada clave de respuesta compatible con cluster (EXAM_STAGE_001)`);
     }
   };
 
@@ -154,6 +203,7 @@ export default function Home() {
     setAnswerKeysJson("");
     setExamCount(0);
     setServerStatus("");
+    setLastResults(null);
   };
 
   const handleGetAnswerKeys = async () => {
@@ -163,7 +213,7 @@ export default function Home() {
     try {
       console.log("🔍 Solicitando claves de respuesta...");
       
-      const response = await axios.get(`${BASE_URL}/answers`, {
+      const response = await axios.get(`${BASE_URL}/answers/mpi-master/8080`, {
         timeout: 10000,
         headers: {
           'Content-Type': 'application/json'
@@ -175,13 +225,25 @@ export default function Home() {
       const result: AnswerKeysResponse = response.data;
 
       if (result.success) {
-        setServerStatus(`✅ Claves de respuesta obtenidas exitosamente`);
+        const examCount = Object.keys(result.answer_keys || {}).length;
+        setServerStatus(`✅ ${examCount} tipos de examen obtenidos exitosamente`);
         
+        // Formatear respuesta con información más detallada
         const formattedResponse = {
-          status: "✅ CLAVES OBTENIDAS",
+          status: "✅ CLAVES DE RESPUESTA OBTENIDAS",
           server_response: result.server_response,
+          exams_available: examCount,
           answer_keys: result.answer_keys,
-          exams_available: Object.keys(result.answer_keys || {}).length
+          summary: {
+            total_exam_types: examCount,
+            exam_details: Object.entries(result.answer_keys || {}).map(([examId, answers]) => ({
+              exam_id: examId,
+              questions_count: answers.length,
+              sample_answers: answers.slice(0, 5).join(', ') + (answers.length > 5 ? '...' : ''),
+              full_answers: answers.join(', ')
+            }))
+          },
+          usage_note: "Estas son las claves de respuesta correctas almacenadas en el cluster"
         };
 
         setResponseJson(JSON.stringify(formattedResponse, null, 2));
@@ -215,7 +277,7 @@ export default function Home() {
         throw new Error("El JSON debe contener un objeto 'answer_keys'");
       }
 
-      const response = await axios.post(`${BASE_URL}/answers`, parsedData, {
+      const response = await axios.post(`${BASE_URL}/answers/mpi-master/8080`, parsedData, {
         timeout: 10000,
         headers: {
           'Content-Type': 'application/json'
@@ -227,12 +289,49 @@ export default function Home() {
       const result = response.data;
 
       if (result.success) {
-        setServerStatus(`✅ Claves de respuesta configuradas exitosamente`);
+        const examIds = Object.keys(parsedData.answer_keys);
+        const firstExamId = examIds[0];
+        const firstExamAnswers = parsedData.answer_keys[firstExamId];
+        const hasMultipleExams = examIds.length > 1;
+        
+        setServerStatus(hasMultipleExams ? 
+          `⚠️ Solo se configuró 1 examen (${firstExamId}). El cluster solo almacena una ficha a la vez` :
+          `✅ Examen ${firstExamId} configurado exitosamente`
+        );
         
         const formattedResponse = {
-          status: "✅ CLAVES CONFIGURADAS",
+          status: hasMultipleExams ? "⚠️ CONFIGURACIÓN PARCIAL" : "✅ CLAVES CONFIGURADAS",
           server_response: result.server_response,
-          exams_configured: Object.keys(parsedData.answer_keys).length
+          cluster_limitation: "El cluster MPI solo puede almacenar UNA ficha de respuestas a la vez",
+          configured_exam: {
+            exam_id: firstExamId,
+            questions_count: firstExamAnswers.length,
+            answers_preview: firstExamAnswers.slice(0, 15).join(', ') + (firstExamAnswers.length > 15 ? '...' : ''),
+            full_answers: firstExamAnswers.join(', '),
+            status: "✅ Almacenado en cluster (Stage 1)"
+          },
+          ...(hasMultipleExams && {
+            ignored_exams: {
+              count: examIds.length - 1,
+              exam_ids: examIds.slice(1),
+              reason: "El cluster solo acepta una ficha de respuestas por vez"
+            }
+          }),
+          summary: {
+            total_exams_sent: examIds.length,
+            exams_stored: 1,
+            questions_in_stored_exam: firstExamAnswers.length,
+            storage_location: "Cluster MPI - Stage 1"
+          },
+          next_steps: [
+            "La ficha está lista para calificar exámenes",
+            hasMultipleExams ? "Para usar otras fichas, envíelas una por vez" : "Use 'Calificar Exámenes' para evaluar estudiantes",
+            "Verifique las claves con 'Obtener Claves'",
+            "Genere exámenes de prueba que coincidan con esta ficha"
+          ],
+          recommendation: hasMultipleExams ? 
+            "💡 Envíe las fichas de respuesta una por una para configurar diferentes tipos de examen" :
+            "✅ Sistema listo para calificar exámenes"
         };
 
         setResponseJson(JSON.stringify(formattedResponse, null, 2));
@@ -291,7 +390,11 @@ export default function Home() {
       setExamCount(parsedData.exams.length);
       setServerStatus(`📝 Procesando ${parsedData.exams.length} exámenes...`);
 
-      const response = await axios.post(`${BASE_URL}/grade`, parsedData, {
+      const response = await axios.post(`${BASE_URL}/grade`, {
+        host: 'mpi-master',
+        port: 8080,
+        ...parsedData
+      }, {
         timeout: 30000, // 30 segundos para procesos MPI
         headers: {
           'Content-Type': 'application/json'
@@ -305,38 +408,81 @@ export default function Home() {
       if (result.success) {
         setServerStatus(`✅ ${result.exams_count} exámenes procesados exitosamente`);
         
-        // Formatear resultados con información detallada - MÚLTIPLES EXÁMENES
+        // Formatear resultados con información detallada y análisis completo
+        const scores = result.results.scores || [];
+        const passThreshold = 60;
+        const passedStudents = scores.filter(s => s.percentage >= passThreshold);
+        const failedStudents = scores.filter(s => s.percentage < passThreshold);
+        
         const formattedResponse = {
           status: "✅ CALIFICACIÓN COMPLETADA",
-          exams_processed: result.exams_count,
-          processing_time: result.processing_time,
-          server_response: result.server_response,
-          detailed_results: result.results.scores?.map((score: ExamResult) => ({
+          processing_info: {
+            exams_processed: result.exams_count,
+            processing_time: result.processing_time,
+            server_response: result.server_response,
+            mpi_processing: "Procesamiento distribuido completado exitosamente"
+          },
+          student_results: scores.map((score: ExamResult) => ({
             student_id: score.student_id,
             score: score.score,
-            percentage: score.percentage,
-            correct_answers: score.correct_answers,
-            wrong_answers: score.wrong_answers,
-            unscored_answers: score.unscored_answers,
-            total_questions: score.total_questions,
-            status: score.percentage >= 60 ? "APROBADO" : "REPROBADO"
-          })) || [],
-          mpi_results: result.results.mpi_results || [],
-          summary: {
-            total_students: result.results.scores?.length || 0,
-            total_exams_processed: result.exams_count,
-            average_score: result.results.scores ? 
-              (result.results.scores.reduce((sum, s) => sum + s.score, 0) / result.results.scores.length).toFixed(2) : 0,
-            average_percentage: result.results.scores ? 
-              (result.results.scores.reduce((sum, s) => sum + s.percentage, 0) / result.results.scores.length).toFixed(2) : 0,
-            passed_students: result.results.scores?.filter(s => s.percentage >= 60).length || 0,
-            failed_students: result.results.scores?.filter(s => s.percentage < 60).length || 0,
-            pass_rate: result.results.scores ? 
-              ((result.results.scores.filter(s => s.percentage >= 60).length / result.results.scores.length) * 100).toFixed(1) : 0
-          }
+            percentage: `${score.percentage}%`,
+            status: score.percentage >= passThreshold ? "✅ APROBADO" : "❌ REPROBADO",
+            breakdown: {
+              correct: score.correct_answers,
+              wrong: score.wrong_answers,
+              unscored: score.unscored_answers,
+              total: score.total_questions
+            },
+            grade_letter: score.percentage >= 90 ? "A" : 
+                         score.percentage >= 80 ? "B" :
+                         score.percentage >= 70 ? "C" :
+                         score.percentage >= 60 ? "D" : "F"
+          })),
+          statistical_analysis: {
+            summary: {
+              total_students: scores.length,
+              total_exams_processed: result.exams_count,
+              pass_threshold: `${passThreshold}%`
+            },
+            performance_metrics: {
+              average_score: scores.length > 0 ? 
+                (scores.reduce((sum, s) => sum + s.score, 0) / scores.length).toFixed(2) : "0",
+              average_percentage: scores.length > 0 ? 
+                (scores.reduce((sum, s) => sum + s.percentage, 0) / scores.length).toFixed(1) + "%" : "0%",
+              median_percentage: scores.length > 0 ? 
+                scores.sort((a, b) => a.percentage - b.percentage)[Math.floor(scores.length / 2)].percentage.toFixed(1) + "%" : "0%",
+              highest_score: scores.length > 0 ? Math.max(...scores.map(s => s.percentage)).toFixed(1) + "%" : "0%",
+              lowest_score: scores.length > 0 ? Math.min(...scores.map(s => s.percentage)).toFixed(1) + "%" : "0%"
+            },
+            pass_fail_analysis: {
+              passed_students: passedStudents.length,
+              failed_students: failedStudents.length,
+              pass_rate: scores.length > 0 ? 
+                ((passedStudents.length / scores.length) * 100).toFixed(1) + "%" : "0%",
+              fail_rate: scores.length > 0 ? 
+                ((failedStudents.length / scores.length) * 100).toFixed(1) + "%" : "0%"
+            },
+            grade_distribution: {
+              "A (90-100%)": scores.filter(s => s.percentage >= 90).length,
+              "B (80-89%)": scores.filter(s => s.percentage >= 80 && s.percentage < 90).length,
+              "C (70-79%)": scores.filter(s => s.percentage >= 70 && s.percentage < 80).length,
+              "D (60-69%)": scores.filter(s => s.percentage >= 60 && s.percentage < 70).length,
+              "F (0-59%)": scores.filter(s => s.percentage < 60).length
+            }
+          },
+          raw_mpi_data: result.results.mpi_results || [],
+          recommendations: [
+            passedStudents.length === scores.length ? "🎉 ¡Excelente! Todos los estudiantes aprobaron" :
+            failedStudents.length === scores.length ? "⚠️ Ningún estudiante aprobó. Revisar contenido del examen" :
+            `📊 ${passedStudents.length} estudiantes aprobaron, ${failedStudents.length} reprobaron`,
+            scores.length > 0 && (scores.reduce((sum, s) => sum + s.percentage, 0) / scores.length) < 50 ? 
+              "📚 Promedio bajo. Considerar refuerzo académico" : 
+              "📈 Rendimiento general aceptable"
+          ]
         };
 
         setResponseJson(JSON.stringify(formattedResponse, null, 2));
+        setLastResults(formattedResponse); // Guardar para mostrar el resumen
       } else {
         throw new Error(result.error || "Error desconocido del servidor");
       }
@@ -479,7 +625,7 @@ export default function Home() {
             onClick={handleLoadExample}
             disabled={isLoading}
           >
-            📋 Cargar Ejemplo
+            🎲 Generar Aleatorio
           </button>
           
           <button 
@@ -523,31 +669,32 @@ export default function Home() {
                 value={inputJson}
                 onChange={(e) => setInputJson(e.target.value)}
                 rows={12}
-                placeholder={`Formato para MÚLTIPLES EXÁMENES:
+                placeholder={`Formato para MÚLTIPLES EXÁMENES (Compatible con Cluster):
 {
   "exams": [
     {
       "student_id": "EST001",
-      "exam_id": "EXAM_MAT_001", 
-      "answers": ["A", "B", "C", "D", "A"]
+      "exam_id": "EXAM_STAGE_001", 
+      "answers": ["A", "B", "C", "D", "A", "B", "C", "D", "A", "B"]
     },
     {
       "student_id": "EST002",
-      "exam_id": "EXAM_MAT_001", 
-      "answers": ["B", "A", "C", "D", "B"]
-    },
-    {
-      "student_id": "EST003",
-      "exam_id": "EXAM_FIS_001", 
-      "answers": ["C", "D", "A", "B", "C"]
+      "exam_id": "EXAM_STAGE_001", 
+      "answers": ["B", "A", "C", "D", "B", "A", "C", "D", "B", "A"]
     }
   ]
 }
 
-NOTA: 
-- Se pueden enviar cientos o miles de exámenes
-- exam_id es OBLIGATORIO
-- answers se convierte a MPIQuestion[] en el servidor`}
+🎲 GENERACIÓN ALEATORIA MEJORADA:
+- Presiona "Generar Aleatorio" para crear 10 exámenes
+- Tipo: EXAM_STAGE_001 (compatible con cluster MPI)
+- 70% probabilidad de respuestas correctas (mayor tasa de aprobación)
+- 10 preguntas por examen (estándar del cluster)
+
+⚠️ LIMITACIÓN DEL CLUSTER: 
+- Solo puede almacenar UNA ficha de respuestas a la vez
+- Todos los exámenes deben usar el mismo exam_id
+- Configurar claves antes de calificar exámenes`}
                 disabled={isLoading}
               />
             </div>
@@ -590,13 +737,23 @@ NOTA:
                 value={answerKeysJson}
                 onChange={(e) => setAnswerKeysJson(e.target.value)}
                 rows={12}
-                placeholder={`Formato requerido:
+                placeholder={`Formato requerido (Compatible con Cluster):
 {
   "answer_keys": {
-    "EXAM_MAT_001": ["A", "B", "C", "D", "A"],
-    "EXAM_FIS_001": ["B", "A", "C", "D", "B"]
+    "EXAM_STAGE_001": ["A", "B", "C", "D", "A", "B", "C", "D", "A", "B"]
   }
-}`}
+}
+
+🎲 GENERACIÓN ALEATORIA:
+- Presiona "Generar Aleatorio" para crear clave compatible
+- Tipo: EXAM_STAGE_001 (reconocido por el cluster MPI)
+- 10 preguntas estándar
+- Patrones realistas de respuestas
+
+⚠️ LIMITACIÓN DEL CLUSTER:
+- Solo acepta UNA ficha de respuestas a la vez
+- Si envías múltiples fichas, solo se usará la primera
+- Recomendación: configurar una ficha por vez`}
                 disabled={isLoading}
               />
             </div>
@@ -628,30 +785,153 @@ NOTA:
           </>
         )}
 
+        {/* Results Summary - Solo para resultados de calificación */}
+        {lastResults && lastResults.statistical_analysis && (
+          <div className="mb-6 p-6 bg-gradient-to-r from-green-50 to-blue-50 border border-green-200 rounded-lg w-full">
+            <h3 className="text-xl font-bold text-green-800 mb-4 flex items-center">
+              📊 Resumen de Resultados del Cluster
+            </h3>
+            
+            {/* Métricas principales */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+              <div className="bg-white p-4 rounded-lg border border-green-100 text-center">
+                <div className="text-2xl font-bold text-green-600">
+                  {lastResults.statistical_analysis.summary.total_students}
+                </div>
+                <div className="text-sm text-gray-600">Estudiantes Evaluados</div>
+              </div>
+              
+              <div className="bg-white p-4 rounded-lg border border-blue-100 text-center">
+                <div className="text-2xl font-bold text-blue-600">
+                  {lastResults.statistical_analysis.performance_metrics.average_percentage}
+                </div>
+                <div className="text-sm text-gray-600">Promedio General</div>
+              </div>
+              
+              <div className="bg-white p-4 rounded-lg border border-purple-100 text-center">
+                <div className="text-2xl font-bold text-purple-600">
+                  {lastResults.statistical_analysis.pass_fail_analysis.pass_rate}
+                </div>
+                <div className="text-sm text-gray-600">Tasa de Aprobación</div>
+              </div>
+            </div>
+
+            {/* Distribución de notas */}
+            <div className="bg-white p-4 rounded-lg border border-gray-100 mb-4">
+              <h4 className="font-semibold text-gray-800 mb-3">Distribución de Calificaciones:</h4>
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-2 text-sm">
+                {Object.entries(lastResults.statistical_analysis.grade_distribution).map(([grade, count]) => (
+                  <div key={grade} className="text-center p-2 bg-gray-50 rounded">
+                    <div className="font-bold text-lg">{count as number}</div>
+                    <div className="text-xs text-gray-600">{grade}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Aprobados vs Reprobados */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="bg-green-100 p-4 rounded-lg text-center">
+                <div className="text-3xl text-green-600 mb-1">✅</div>
+                <div className="text-lg font-bold text-green-800">
+                  {lastResults.statistical_analysis.pass_fail_analysis.passed_students} Aprobados
+                </div>
+                <div className="text-sm text-green-600">
+                  {lastResults.statistical_analysis.pass_fail_analysis.pass_rate}
+                </div>
+              </div>
+              
+              <div className="bg-red-100 p-4 rounded-lg text-center">
+                <div className="text-3xl text-red-600 mb-1">❌</div>
+                <div className="text-lg font-bold text-red-800">
+                  {lastResults.statistical_analysis.pass_fail_analysis.failed_students} Reprobados
+                </div>
+                <div className="text-sm text-red-600">
+                  {lastResults.statistical_analysis.pass_fail_analysis.fail_rate}
+                </div>
+              </div>
+            </div>
+
+            {/* Recomendaciones */}
+            {lastResults.recommendations && lastResults.recommendations.length > 0 && (
+              <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                <h4 className="font-semibold text-yellow-800 mb-2">💡 Recomendaciones:</h4>
+                <ul className="text-sm text-yellow-700 space-y-1">
+                  {lastResults.recommendations.map((rec: string, index: number) => (
+                    <li key={index} className="flex items-start">
+                      <span className="mr-2">•</span>
+                      <span>{rec}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Response JSON */}
         <div className='flex flex-col items-center w-full'>
           <label htmlFor="responseJson" className="text-lg font-semibold mb-2 text-gray-700">
             📥 Respuesta del Servidor:
           </label>
-          <textarea 
-            className="text-black border-2 border-gray-300 rounded-lg p-3 w-full font-mono text-sm bg-gray-50"
-            id="responseJson"
-            value={responseJson}
-            readOnly
-            rows={15}
-            placeholder="Aquí aparecerán los resultados del servidor..."
-          />
+          <div className="w-full relative">
+            <textarea 
+              className="text-black border-2 border-gray-300 rounded-lg p-3 w-full font-mono text-sm bg-gray-50"
+              id="responseJson"
+              value={responseJson}
+              readOnly
+              rows={20}
+              placeholder="Aquí aparecerán los resultados del servidor..."
+            />
+            {responseJson && (
+              <div className="absolute top-2 right-2 flex gap-2">
+                <button 
+                  className="bg-blue-500 hover:bg-blue-600 text-white px-3 py-1 rounded text-xs"
+                  onClick={() => navigator.clipboard.writeText(responseJson)}
+                  title="Copiar respuesta"
+                >
+                  📋 Copiar
+                </button>
+                <button 
+                  className="bg-green-500 hover:bg-green-600 text-white px-3 py-1 rounded text-xs"
+                  onClick={() => {
+                    const blob = new Blob([responseJson], { type: 'application/json' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `scorehive-results-${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.json`;
+                    a.click();
+                    URL.revokeObjectURL(url);
+                  }}
+                  title="Descargar como JSON"
+                >
+                  💾 Descargar
+                </button>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Información adicional */}
         <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg w-full">
           <h3 className="font-semibold text-blue-800 mb-2">ℹ️ Información del Sistema:</h3>
           <div className="text-blue-700 text-sm space-y-1">
-            <p><strong>Protocolo:</strong> ScoreHive Protocol</p>
+            <p><strong>Protocolo:</strong> ScoreHive Protocol (SH) - Comunicación TCP optimizada</p>
             <p><strong>Comandos disponibles:</strong> GET_ANSWERS, SET_ANSWERS, REVIEW, ECHO, SHUTDOWN</p>
-            <p><strong>Distribución:</strong> Procesamiento paralelo con MPI</p>
-            <p><strong>Estructura:</strong> Frontend envía arrays de strings → Adapter convierte a MPIQuestion[] → Servidor procesa con MPI</p>
-            <p><strong>Capacidad:</strong> Maneja múltiples exámenes (cientos/miles) en una sola petición</p>
+            <p><strong>Distribución:</strong> Procesamiento paralelo con MPI (Master + Workers)</p>
+            <p><strong>Arquitectura:</strong> Frontend (Next.js) → Adapter (HTTP-to-TCP) → Cluster (MPI C++)</p>
+            <p><strong>Conversión automática:</strong> Strings → MPIQuestion[] → Resultados estadísticos</p>
+            <p><strong>Capacidad:</strong> Procesa múltiples exámenes (cientos/miles) simultáneamente</p>
+            <p><strong>Análisis:</strong> Estadísticas completas, distribución de notas, recomendaciones</p>
+            <p><strong>Exportación:</strong> Resultados descargables en formato JSON</p>
+            <p><strong>Generación inteligente:</strong> 70% probabilidad de aprobar, formato compatible con cluster</p>
+            <p><strong>Limitaciones del cluster:</strong> Solo almacena una ficha de respuestas a la vez (Stage 1)</p>
+          </div>
+          <div className="mt-3 p-2 bg-blue-100 rounded">
+            <p className="text-blue-800 text-xs">
+              <strong>🔧 Mejoras implementadas:</strong> SET_ANSWERS corregido para una ficha, mayor probabilidad de aprobar, 
+              resumen visual de resultados, análisis estadístico completo, interfaz optimizada para cluster MPI
+            </p>
           </div>
         </div>
       </div>
