@@ -1,10 +1,8 @@
 # MPI Hostfile para ScoreHiveCluster
 # Formato: hostname slots=N
 # Configuración: 1 master + 2 workers con 2 slots cada uno = 5 procesos MPI total
-
 # Master node (rank 0) - 1 slot
 mpi-master slots=1
-
 # Worker nodes (rank 1-4) - 2 slots cada uno
 mpi-worker1 slots=2
 mpi-worker2 slots=2
