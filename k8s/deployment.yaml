@@ -1,0 +1,148 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: scorehive-app
+  namespace: scorehive
+  labels:
+    app: scorehive
+    version: v1.0.0
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: scorehive
+  template:
+    metadata:
+      labels:
+        app: scorehive
+        version: v1.0.0
+    spec:
+      containers:
+      - name: scorehive
+        # ✅ MEJORA 1: Etiqueta específica en lugar de :latest
+        image: gcr.io/PROJECT_ID/scorehive-mpi:v1.0.0
+        ports:
+        - containerPort: 8080
+          name: http
+        
+        # ✅ MEJORA 2: Recursos definidos (requests y limits)
+        resources:
+          requests:
+            cpu: 500m      # CPU mínima garantizada
+            memory: 512Mi  # Memoria mínima garantizada
+          limits:
+            cpu: 1000m     # CPU máxima permitida
+            memory: 1Gi    # Memoria máxima permitida
+        
+        # ✅ MEJORA 3: Sondeos de salud
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30  # Espera inicial antes de empezar
+          periodSeconds: 10        # Frecuencia de verificación
+          timeoutSeconds: 5        # Tiempo máximo de respuesta
+          failureThreshold: 3      # Fallos consecutivos antes de reiniciar
+          successThreshold: 1      # Éxitos para considerar saludable
+        
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 10  # Espera menor para readiness
+          periodSeconds: 5         # Verificación más frecuente
+          timeoutSeconds: 3        # Timeout menor
+          failureThreshold: 3      # Fallos antes de quitar del servicio
+          successThreshold: 1      # Éxitos para considerar listo
+        
+        # Variables de entorno
+        env:
+        - name: NODE_ENV
+          value: "production"
+        - name: LOG_LEVEL
+          value: "info"
+        
+        # ✅ MEJORA 4: Configuración de seguridad
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 1000
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+        
+        # Volúmenes para archivos temporales (filesystem de solo lectura)
+        volumeMounts:
+        - name: tmp-volume
+          mountPath: /tmp
+        - name: cache-volume
+          mountPath: /app/cache
+      
+      # ✅ MEJORA 5: Configuración de seguridad del Pod
+      securityContext:
+        fsGroup: 1000
+        runAsGroup: 1000
+        runAsUser: 1000
+      
+      volumes:
+      - name: tmp-volume
+        emptyDir: {}
+      - name: cache-volume
+        emptyDir: {}
+      
+      # ✅ MEJORA 6: Configuración de disponibilidad
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - scorehive
+              topologyKey: kubernetes.io/hostname
+      
+      # ✅ MEJORA 7: Tolerancia a interrupciones
+      terminationGracePeriodSeconds: 30
+---
+# Configuración de disrupción presupuestaria
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: scorehive-pdb
+  namespace: scorehive
+spec:
+  minAvailable: 0
+  selector:
+    matchLabels:
+      app: scorehive
+---
+# Configuración de escalado horizontal automático
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: scorehive-hpa
+  namespace: scorehive
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: scorehive-app
+  minReplicas: 1
+  maxReplicas: 3
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80

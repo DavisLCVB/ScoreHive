@@ -4,10 +4,17 @@ Este directorio contiene los manifiestos de Kubernetes para desplegar ScoreHive 
 
 ## Arquitectura
 
+- **Adapter**: HTTP-to-TCP proxy con endpoints de health (/health) ✅
+- **MPI Cluster**: Servidor TCP con protocolo SH personalizado
 - **MPI Operator**: Gestiona trabajos MPI en Kubernetes
 - **MPIJob**: Define un trabajo MPI con 1 master + 2 workers (5 procesos MPI total)
-- **LoadBalancer**: Expone el servicio HTTP del master en puerto 80
+- **LoadBalancer**: Expone el adapter HTTP en puerto 80
 - **SSH Keys**: Comunicación segura entre nodos MPI
+
+### Flujo de Health Checks
+- **Frontend** → HTTP requests → **Adapter LoadBalancer**
+- **Adapter** → Health checks via `/health` endpoint ✅
+- **MPI Cluster** → TCP socket y netcat health checks
 
 ## Pre-requisitos
 
@@ -19,8 +26,9 @@ Este directorio contiene los manifiestos de Kubernetes para desplegar ScoreHive 
 ## Despliegue Rápido
 
 ```bash
-# 1. Configurar proyecto GCP
+# 1. Configurar proyecto GCP y versión
 export PROJECT_ID="tu-proyecto-gcp"
+export IMAGE_TAG="v1.0.0"  # ✅ Usar etiquetas específicas
 
 # 2. Ejecutar script de despliegue
 cd k8s
@@ -66,6 +74,8 @@ kubectl apply -f service.yaml
 - `namespace.yaml`: Namespace `scorehive` 
 - `mpi-operator.yaml`: Instalación del MPI Operator de Kubeflow
 - `mpijob.yaml`: Definición del trabajo MPI (1 launcher + 1 master + 2 workers)
+- `deployment.yaml`: Deployment estándar con mejores prácticas de producción
+- `adapter-deployment.yaml`: Deployment del adapter HTTP con health checks
 - `service.yaml`: LoadBalancer para exponer el master HTTP (puerto 80)
 - `secrets.yaml`: Template para claves SSH de MPI
 - `gke-cluster.yaml`: Configuración declarativa del cluster (Config Connector)
@@ -75,9 +85,10 @@ kubectl apply -f service.yaml
 
 ### Recursos por Pod
 
-- **Master**: 1 CPU, 1Gi RAM
-- **Workers**: 2 CPU, 2Gi RAM cada uno
-- **Launcher**: 0.5 CPU, 512Mi RAM
+- **Adapter**: 0.2-0.5 CPU, 256-512Mi RAM (1 replica)
+- **Master**: 0.5-1 CPU, 512Mi-1Gi RAM (1 replica)
+- **Workers**: 1-2 CPU, 1-2Gi RAM cada uno (2 replicas)
+- **Launcher**: 0.2-0.5 CPU, 256-512Mi RAM (1 replica)
 
 ### Configuración MPI
 
@@ -112,17 +123,22 @@ kubectl get service scorehive-service -n scorehive
 
 ## Escalado
 
-Para cambiar el número de workers:
+Para cambiar el número de workers (mantener conservador):
 
 ```bash
-# Editar mpijob.yaml
+# Editar mpijob.yaml (recomendado: 2-4 workers máximo)
 spec:
   mpiReplicaSpecs:
     Worker:
-      replicas: 4  # Cambiar número de workers
+      replicas: 2  # Default conservador
+      
+# Para más adapters (solo si necesario)
+spec:
+  replicas: 1  # En adapter-deployment.yaml
 
 # Reaplicar
 kubectl apply -f mpijob.yaml
+kubectl apply -f adapter-deployment.yaml
 ```
 
 ## Limpieza
@@ -137,6 +153,35 @@ kubectl delete namespace mpi-operator
 # Eliminar cluster GKE
 gcloud container clusters delete scorehive-gke --zone=us-central1-a
 ```
+
+## Mejores Prácticas Implementadas
+
+### ✅ Etiquetas de Imagen Inmutables
+- Usar `v1.0.0` en lugar de `:latest`
+- Permite rollbacks y trazabilidad
+- Variable `IMAGE_TAG` configurable
+
+### ✅ Sondeos de Salud (Health Probes)
+- **livenessProbe**: `/health` - Reinicia contenedor si falla
+- **readinessProbe**: `/ready` - Controla tráfico del Service
+- Configuración robusta con timeouts y reintentos
+
+### ✅ Recursos Definidos
+- **requests**: CPU/memoria garantizada
+- **limits**: Máximo consumo permitido
+- Evita saturación de nodos
+
+### ✅ Configuración de Seguridad
+- Usuario no-root (UID 1000)
+- Filesystem de solo lectura
+- Sin escalada de privilegios
+- Capabilities mínimas
+
+### ✅ Escalado Conservador
+- **Configuración inicial**: 1 adapter + 1 master + 2 workers
+- **PodDisruptionBudget**: Permite interrupciones (minAvailable: 0)
+- **HorizontalPodAutoscaler**: Escalado automático hasta 3 replicas máximo
+- **Anti-afinidad**: Preferencial (no obligatoria)
 
 ## Troubleshooting
 
@@ -155,3 +200,8 @@ gcloud container clusters delete scorehive-gke --zone=us-central1-a
 ### Problemas de imagen Docker
 - Confirmar que la imagen existe en Container Registry
 - Verificar permisos de pull de imagen
+
+### Health Probes Fallando
+- Verificar que la aplicación expone `/health` y `/ready`
+- Ajustar `initialDelaySeconds` si la app tarda en iniciar
+- Revisar logs: `kubectl logs -l app=scorehive -n scorehive`

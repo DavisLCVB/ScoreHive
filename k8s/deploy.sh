@@ -48,10 +48,18 @@ gcloud container clusters create $CLUSTER_NAME \
 echo "🔑 Getting cluster credentials..."
 gcloud container clusters get-credentials $CLUSTER_NAME --zone=$ZONE
 
-# Build and push Docker image
-echo "🐳 Building and pushing Docker image..."
+# Build and push Docker images with version tag
+IMAGE_TAG=${IMAGE_TAG:-"v1.0.0"}
+echo "🐳 Building and pushing Docker images with tag: $IMAGE_TAG..."
+
+# Build cluster MPI image
 cd ../cluster
-gcloud builds submit --tag gcr.io/$PROJECT_ID/scorehive-mpi:latest .
+gcloud builds submit --tag gcr.io/$PROJECT_ID/scorehive-mpi:$IMAGE_TAG .
+
+# Build adapter image
+cd ../adapter
+gcloud builds submit --tag gcr.io/$PROJECT_ID/scorehive-adapter:$IMAGE_TAG .
+
 cd ../k8s
 
 # Install MPI Operator
@@ -88,25 +96,32 @@ data:
   config: $SSH_CONFIG
 EOF
 
-# Update MPIJob YAML with correct project ID
-sed "s/PROJECT_ID/$PROJECT_ID/g" mpijob.yaml > mpijob-generated.yaml
+# Update YAML files with correct project ID and image tag
+sed -e "s/PROJECT_ID/$PROJECT_ID/g" -e "s/v1.0.0/$IMAGE_TAG/g" mpijob.yaml > mpijob-generated.yaml
+sed -e "s/PROJECT_ID/$PROJECT_ID/g" -e "s/v1.0.0/$IMAGE_TAG/g" adapter-deployment.yaml > adapter-deployment-generated.yaml
 
 # Deploy namespace and secrets
 echo "📦 Creating namespace and secrets..."
 kubectl apply -f namespace.yaml
 kubectl apply -f secrets-generated.yaml
 
-# Deploy ScoreHive cluster
-echo "🎯 Deploying ScoreHive MPI cluster..."
+# Deploy ScoreHive components
+echo "🎯 Deploying ScoreHive components..."
+kubectl apply -f adapter-deployment-generated.yaml
 kubectl apply -f mpijob-generated.yaml
 kubectl apply -f service.yaml
 
-# Wait for deployment
-echo "⏳ Waiting for ScoreHive cluster to be ready..."
+# Wait for deployments
+echo "⏳ Waiting for ScoreHive components to be ready..."
+kubectl wait --for=condition=available --timeout=300s deployment/scorehive-adapter -n scorehive
 kubectl wait --for=condition=Ready --timeout=600s pods -l mpi-job-name=scorehive-cluster -n scorehive
 
-# Get service endpoint
-echo "🌐 Getting service endpoint..."
+# Get service endpoints
+echo "🌐 Getting service endpoints..."
+echo "📡 Adapter (External):"
+kubectl get service scorehive-adapter -n scorehive
+echo ""
+echo "🖥️  Cluster (Internal):"
 kubectl get service scorehive-service -n scorehive
 
 echo "✅ Deployment complete!"
@@ -118,7 +133,7 @@ echo "  Get service IP: kubectl get service scorehive-service -n scorehive"
 echo "  Port forward: kubectl port-forward service/scorehive-internal 8080:8080 -n scorehive"
 
 # Cleanup generated files
-rm -f mpi_key mpi_key.pub authorized_keys secrets-generated.yaml mpijob-generated.yaml
+rm -f mpi_key mpi_key.pub authorized_keys secrets-generated.yaml mpijob-generated.yaml adapter-deployment-generated.yaml
 
 echo ""
 echo "🧹 Cleanup complete. Generated files removed."

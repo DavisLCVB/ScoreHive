@@ -1,0 +1,188 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: scorehive-adapter
+  namespace: scorehive
+  labels:
+    app: scorehive-adapter
+    component: adapter
+    version: v1.0.0
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: scorehive-adapter
+  template:
+    metadata:
+      labels:
+        app: scorehive-adapter
+        component: adapter
+        version: v1.0.0
+    spec:
+      containers:
+      - name: adapter
+        # ✅ Etiqueta específica
+        image: gcr.io/PROJECT_ID/scorehive-adapter:v1.0.0
+        ports:
+        - containerPort: 3001
+          name: http
+          protocol: TCP
+        
+        # ✅ Recursos definidos
+        resources:
+          requests:
+            cpu: 200m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+        
+        # ✅ Health probes usando el endpoint /health existente
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 3001
+          initialDelaySeconds: 20
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+          successThreshold: 1
+        
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 3001
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+          successThreshold: 1
+        
+        # Variables de entorno
+        env:
+        - name: NODE_ENV
+          value: "production"
+        - name: PORT
+          value: "3001"
+        - name: MPI_CLUSTER_HOST
+          value: "scorehive-internal.scorehive.svc.cluster.local"
+        - name: MPI_CLUSTER_PORT
+          value: "8080"
+        - name: LOG_LEVEL
+          value: "info"
+        
+        # ✅ Configuración de seguridad
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 1000
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+        
+        # Volúmenes para archivos temporales
+        volumeMounts:
+        - name: tmp-volume
+          mountPath: /tmp
+      
+      # ✅ Configuración de seguridad del Pod
+      securityContext:
+        fsGroup: 1000
+        runAsGroup: 1000
+        runAsUser: 1000
+      
+      volumes:
+      - name: tmp-volume
+        emptyDir: {}
+      
+      # ✅ Distribución en diferentes nodos
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - scorehive-adapter
+              topologyKey: kubernetes.io/hostname
+      
+      terminationGracePeriodSeconds: 30
+---
+# Service para el adapter
+apiVersion: v1
+kind: Service
+metadata:
+  name: scorehive-adapter
+  namespace: scorehive
+  labels:
+    app: scorehive-adapter
+spec:
+  selector:
+    app: scorehive-adapter
+  ports:
+  - port: 80
+    targetPort: 3001
+    protocol: TCP
+    name: http
+  type: LoadBalancer
+---
+# Service interno para comunicación cluster-adapter
+apiVersion: v1
+kind: Service
+metadata:
+  name: scorehive-adapter-internal
+  namespace: scorehive
+  labels:
+    app: scorehive-adapter
+spec:
+  selector:
+    app: scorehive-adapter
+  ports:
+  - port: 3001
+    targetPort: 3001
+    protocol: TCP
+    name: http-internal
+  type: ClusterIP
+---
+# PodDisruptionBudget para el adapter
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: scorehive-adapter-pdb
+  namespace: scorehive
+spec:
+  minAvailable: 0
+  selector:
+    matchLabels:
+      app: scorehive-adapter
+---
+# HorizontalPodAutoscaler para el adapter
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: scorehive-adapter-hpa
+  namespace: scorehive
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: scorehive-adapter
+  minReplicas: 1
+  maxReplicas: 3
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
