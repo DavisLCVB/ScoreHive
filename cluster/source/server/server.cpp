@@ -222,6 +222,7 @@ void Server::_handle_review() {
     coordinator.send_to_workers(exams_json, _mpi_size);
     auto results = coordinator.receive_results_from_workers(_mpi_size);
     auto msg = results.dump();
+    spdlog::info("Results from review: {}", msg);
     _response.code = ScoreHiveResponseCode::OK;
     _response.length = msg.size();
     _response.data = msg;

@@ -273,12 +273,16 @@ class SHProtocolAdapter {
   }
 
   setupMiddleware() {
-    this.app.use(express.json());
-    this.app.use(express.text({ type: 'text/plain' }));
+    // Aumentar límite de payload para soportar 1000+ exámenes
+    // 50MB límite para payloads grandes
+    this.app.use(express.json({ limit: '50mb' }));
+    this.app.use(express.text({ type: 'text/plain', limit: '50mb' }));
+    this.app.use(express.urlencoded({ limit: '50mb', extended: true }));
     
     // Middleware de logging
     this.app.use((req, res, next) => {
-      console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
+      const payloadSize = req.get('Content-Length') || 0;
+      console.log(`${new Date().toISOString()} - ${req.method} ${req.path} (${payloadSize} bytes)`);
       next();
     });
   }

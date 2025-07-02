@@ -12,9 +12,10 @@
  * @brief Server configuration
  */
 struct ServerConfig {
-  u16 port = 8080;                    /** Port to listen on */
-  u16 backlog = 10;                   /** Backlog for the listen socket */
-  u32 max_message_size = 1024 * 1024; /** Maximum message size (1MB default) */
+  u16 port = 8080;  /** Port to listen on */
+  u16 backlog = 10; /** Backlog for the listen socket */
+  u32 max_message_size =
+      1024 * 1024 * 10; /** Maximum message size (1MB default) */
 };
 
 /**
