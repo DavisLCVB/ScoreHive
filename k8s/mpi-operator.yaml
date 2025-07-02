@@ -21,7 +21,7 @@ spec:
       serviceAccountName: mpi-operator
       containers:
       - name: mpi-operator
-        image: kubeflownotebookswg/mpi-operator:v0.4.0
+        image: kubeflow/mpi-operator:v0.3.0
         command: ["/manager"]
         args:
         - --config=/etc/config/config.yaml
