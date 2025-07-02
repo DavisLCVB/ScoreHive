@@ -3,7 +3,7 @@ FROM ubuntu:22.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Instalar solo lo esencial
+# Instalar dependencias esenciales y librerías requeridas
 RUN apt-get update && apt-get install -y \
     build-essential \
     cmake \
@@ -11,6 +11,11 @@ RUN apt-get update && apt-get install -y \
     g++-12 \
     libopenmpi-dev \
     openmpi-bin \
+    libspdlog-dev \
+    nlohmann-json3-dev \
+    libboost-system-dev \
+    libboost-thread-dev \
+    netcat-openbsd \
     && rm -rf /var/lib/apt/lists/*
 
 # Configurar compiladores
@@ -25,7 +30,7 @@ COPY . .
 RUN mkdir build && cd build && \
     cmake .. -DCMAKE_BUILD_TYPE=Release \
              -DCMAKE_CXX_COMPILER=g++-12 \
-             -DCMAKE_CXX_STANDARD=20 && \
+             -DCMAKE_CXX_STANDARD=23 && \
     make -j$(nproc)
 
 # Punto de entrada (sobrescrito por MPI Operator)
