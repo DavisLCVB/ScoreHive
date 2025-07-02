@@ -1,0 +1,31 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: scorehive-service
+  namespace: scorehive
+spec:
+  selector:
+    mpi-job-name: scorehive-cluster
+    mpi-job-role: master
+  ports:
+  - port: 80
+    targetPort: 8080
+    protocol: TCP
+    name: http
+  type: LoadBalancer
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: scorehive-internal
+  namespace: scorehive
+spec:
+  selector:
+    mpi-job-name: scorehive-cluster
+    mpi-job-role: master
+  ports:
+  - port: 8080
+    targetPort: 8080
+    protocol: TCP
+    name: http-internal
+  type: ClusterIP

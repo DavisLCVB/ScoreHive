@@ -1,0 +1,52 @@
+apiVersion: container.cnrm.cloud.google.com/v1beta1
+kind: ContainerCluster
+metadata:
+  name: scorehive-gke
+  namespace: scorehive
+spec:
+  location: us-central1-a
+  initialNodeCount: 1
+  
+  # Enable required features
+  addonsConfig:
+    httpLoadBalancing:
+      disabled: false
+    networkPolicyConfig:
+      disabled: false
+  
+  # Network configuration
+  networkPolicy:
+    enabled: true
+  
+  # Node pool configuration
+  nodePool:
+  - name: default-pool
+    initialNodeCount: 3
+    nodeConfig:
+      machineType: e2-standard-4  # 4 vCPUs, 16GB RAM
+      diskSizeGb: 50
+      diskType: pd-standard
+      preemptible: false
+      
+      # Enable necessary OAuth scopes
+      oauthScopes:
+      - https://www.googleapis.com/auth/cloud-platform
+      
+      # Labels for node identification
+      labels:
+        node-type: compute
+        
+      # Taints for dedicated MPI workloads (optional)
+      # taints:
+      # - key: mpi-workload
+      #   value: "true"
+      #   effect: NO_SCHEDULE
+  
+  # Cluster-level configurations
+  masterAuth:
+    clientCertificateConfig:
+      issueClientCertificate: false
+  
+  # Enable workload identity for better security
+  workloadIdentityConfig:
+    workloadPool: PROJECT_ID.svc.id.goog
